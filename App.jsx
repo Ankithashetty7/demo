@@ -214,16 +214,27 @@ async function fetchWebsiteSignals(url) {
 
     const filteredImages = [...imageUrls].slice(0, 8);
 
-    return { signals: signals || null, imageUrls: filteredImages };
+    // First og:image is the most reliable single brand image
+    const ogImage = (() => {
+      const m = html.match(/<meta[^>]+(?:og:image|twitter:image)[^>]+content=["']([^"']+)["']/i)
+               || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:og:image|twitter:image)/i);
+      return m?.[1] && !m[1].startsWith("data:") ? m[1] : filteredImages[0] || null;
+    })();
+
+    return {
+      signals: signals || null,
+      imageUrls: filteredImages,
+      rawMeta: { title, desc, ogTitle, ogDesc, ogSiteName, h1, h2s, keywords, ogImage }
+    };
   } catch {
-    return { signals: null, imageUrls: [] };
+    return { signals: null, imageUrls: [], rawMeta: {} };
   }
 }
 
 async function analyzeProspect(url) {
   const endpoint = import.meta.env.VITE_API_ENDPOINT;
 
-  const { signals: pageSignals, imageUrls } = await fetchWebsiteSignals(url);
+  const { signals: pageSignals, imageUrls, rawMeta } = await fetchWebsiteSignals(url);
 
   const contextBlock = pageSignals
     ? `\n\nREAL WEBSITE CONTENT EXTRACTED FROM THE PAGE (use this as your PRIMARY source of truth):\n---\n${pageSignals}\n---\n`
@@ -273,7 +284,7 @@ Return ONLY this JSON object with no other text:
   const text = data.content?.[0]?.text || "";
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) throw new Error("No JSON from Anthropic");
-  return { ...JSON.parse(match[0]), url, imageUrls };
+  return { ...JSON.parse(match[0]), url, imageUrls, rawMeta: rawMeta || {} };
 }
 
 async function genCampaignHTML(p) {
@@ -282,7 +293,9 @@ async function genCampaignHTML(p) {
   const siteImages = (p.imageUrls || []).slice(0, 6);
   const fallbackImgs = buildKeywordImages(p);
   const imgs = siteImages.length >= 4 ? siteImages : [...siteImages, ...fallbackImgs].slice(0, 6);
-  const heroUrl  = imgs[0] || `https://picsum.photos/seed/${encodeURIComponent(p.companyName||'co')}0/1400/900`;
+  // OG image is the highest-quality brand image — prioritise it for the hero
+  const ogImage = p.rawMeta?.ogImage;
+  const heroUrl  = ogImage || imgs[0] || `https://picsum.photos/seed/${encodeURIComponent(p.companyName||'co')}0/1400/900`;
   const card1Url = imgs[1] || `https://picsum.photos/seed/${encodeURIComponent(p.companyName||'co')}1/600/400`;
   const card2Url = imgs[2] || `https://picsum.photos/seed/${encodeURIComponent(p.companyName||'co')}2/600/400`;
   const card3Url = imgs[3] || `https://picsum.photos/seed/${encodeURIComponent(p.companyName||'co')}3/600/400`;
@@ -386,9 +399,9 @@ function BrandedMockup({ p }) {
   const sc = p.secondaryColor || "#fff";
   const textOnPrimary = cc(pc);
   const navLinks = p.navLinks || ["Products", "Solutions", "Resources", "About"];
-  const heroImg = (p.imageUrls || [])[0];
-  const heroHeadline = p.heroHeadline || `The Future of ${p.industry}.`;
-  const heroSubtext = p.heroSubtext || p.businessDescription || "";
+  const heroImg = p.rawMeta?.ogImage || (p.imageUrls || [])[0];
+  const heroHeadline = p.rawMeta?.h1 || p.heroHeadline || `The Future of ${p.industry}.`;
+  const heroSubtext = p.rawMeta?.desc || p.heroSubtext || p.businessDescription || "";
 
   // Detect if this is a dark-background brand (Nike, Apple, etc.)
   const isDark = pc === "#000000" || pc === "#111111" || pc === "#111" || pc === "#000" ||
@@ -473,6 +486,15 @@ function BrandedMockup({ p }) {
 }
 
 function buildKeywordImages(p) {
+  // Prefer specific asset keywords from website analysis for contextual Unsplash images
+  const keywords = p.assetKeywords;
+  if (keywords?.length > 0) {
+    return Array.from({ length: 8 }, (_, i) => {
+      const kw = encodeURIComponent(keywords[i % keywords.length]);
+      return `https://source.unsplash.com/600x420/?${kw}&sig=${i}`;
+    });
+  }
+  // Fallback: industry-curated Unsplash IDs
   const ind = (p.industry || "default").toLowerCase();
   const key = Object.keys(IMAGE_DICT).find(k => ind.includes(k.split(" ")[0])) || "default";
   const ids = IMAGE_DICT[key] || IMAGE_DICT["default"];
@@ -1053,39 +1075,71 @@ function Screen4({ p }) {
           )}
         </div>
 
-        <div style={{ width: 240, background: "#2c2c2c", borderLeft: "1px solid #333", padding: 16, flexShrink: 0, display: "flex", flexDirection: "column", color: "#fff", fontSize: 11 }}>
-          <div style={{ fontSize: 9, color: "#999", fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1, marginBottom: 24 }}>Design</div>
+        <div style={{ width: 260, background: "#2c2c2c", borderLeft: "1px solid #333", padding: "14px 16px", flexShrink: 0, display: "flex", flexDirection: "column", color: "#fff", fontSize: 11, overflow: "auto" }} className="scroll">
+          <div style={{ fontSize: 9, color: "#999", fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1, marginBottom: 14 }}>Brand Tokens — Extracted Live</div>
 
-          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-            <div style={{ background: "#383838", padding: "6px 8px", flex: 1, borderRadius: 4, border: "1px solid #444", display: "flex", alignItems: "center" }}>
-              <span style={{ color: "#6b7280", marginRight: 8 }}>W</span> 1280
+          {/* OG Image preview */}
+          {(p.rawMeta?.ogImage || (p.imageUrls||[])[0]) && (
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 9, color: "#999", textTransform: "uppercase", fontWeight: "bold", letterSpacing: 1, display: "block", marginBottom: 6 }}>Hero Image</label>
+              <img
+                src={p.rawMeta?.ogImage || p.imageUrls[0]}
+                alt="og"
+                style={{ width: "100%", height: 90, objectFit: "cover", borderRadius: 4, display: "block", border: "1px solid #444" }}
+                onError={e => e.target.style.display = "none"}
+              />
             </div>
-            <div style={{ background: "#383838", padding: "6px 8px", flex: 1, borderRadius: 4, border: "1px solid #444", display: "flex", alignItems: "center" }}>
-              <span style={{ color: "#6b7280", marginRight: 8 }}>H</span> 800
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
-            <div style={{ background: "#383838", padding: "6px 8px", flex: 1, borderRadius: 4, border: "1px solid #444", display: "flex", alignItems: "center" }}>
-              <span style={{ color: "#6b7280", marginRight: 8 }}>X</span> 450
-            </div>
-            <div style={{ background: "#383838", padding: "6px 8px", flex: 1, borderRadius: 4, border: "1px solid #444", display: "flex", alignItems: "center" }}>
-              <span style={{ color: "#6b7280", marginRight: 8 }}>Y</span> 210
-            </div>
-          </div>
+          )}
 
-          <hr style={{ borderColor: "#444", marginBottom: 24 }} />
-
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: 9, color: "#999", textTransform: "uppercase", fontWeight: "bold", letterSpacing: 1, display: "block", marginBottom: 8 }}>Fill</label>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#383838", padding: 8, borderRadius: 4, border: "1px solid #444" }}>
-              <div style={{ width: 16, height: 16, background: pc, border: "1px solid #666", borderRadius: 3 }} />
-              <span style={{ fontSize: 11, fontFamily: "monospace", textTransform: "uppercase", color: "#e5e7eb" }}>{pc}</span>
-              <span style={{ marginLeft: "auto", color: "#6b7280" }}>100%</span>
+          {/* Meta title */}
+          {(p.rawMeta?.title || p.rawMeta?.ogTitle) && (
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 9, color: "#999", textTransform: "uppercase", fontWeight: "bold", letterSpacing: 1, display: "block", marginBottom: 4 }}>Page Title</label>
+              <div style={{ background: "#383838", padding: "6px 8px", borderRadius: 4, border: "1px solid #444", color: "#e5e7eb", lineHeight: 1.4, fontSize: 10 }}>
+                {(p.rawMeta?.ogTitle || p.rawMeta?.title || "").slice(0, 60)}
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Meta description */}
+          {(p.rawMeta?.desc || p.rawMeta?.ogDesc) && (
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 9, color: "#999", textTransform: "uppercase", fontWeight: "bold", letterSpacing: 1, display: "block", marginBottom: 4 }}>Meta Description</label>
+              <div style={{ background: "#383838", padding: "6px 8px", borderRadius: 4, border: "1px solid #444", color: "#9ca3af", lineHeight: 1.4, fontSize: 10 }}>
+                {(p.rawMeta?.desc || p.rawMeta?.ogDesc || "").slice(0, 100)}…
+              </div>
+            </div>
+          )}
+
+          <hr style={{ borderColor: "#444", margin: "10px 0" }} />
+
+          {/* Color palette */}
+          <label style={{ fontSize: 9, color: "#999", textTransform: "uppercase", fontWeight: "bold", letterSpacing: 1, display: "block", marginBottom: 8 }}>Color Palette</label>
+          {[["Primary", pc], ["Secondary", p.secondaryColor || "#7C3AED"]].map(([label, color]) => (
+            <div key={label} style={{ display: "flex", alignItems: "center", gap: 8, background: "#383838", padding: "6px 8px", borderRadius: 4, border: "1px solid #444", marginBottom: 6 }}>
+              <div style={{ width: 18, height: 18, background: color, border: "1px solid #555", borderRadius: 3, flexShrink: 0 }} />
+              <span style={{ fontSize: 10, color: "#6b7280", width: 52 }}>{label}</span>
+              <span style={{ fontSize: 10, fontFamily: "monospace", color: "#e5e7eb" }}>{color}</span>
+            </div>
+          ))}
+
+          <hr style={{ borderColor: "#444", margin: "10px 0" }} />
+
+          {/* Detected assets */}
+          <label style={{ fontSize: 9, color: "#999", textTransform: "uppercase", fontWeight: "bold", letterSpacing: 1, display: "block", marginBottom: 8 }}>Detected Assets</label>
+          {[
+            ["Images found", `${(p.imageUrls||[]).length} CDN assets`],
+            ["Nav items", `${(p.navLinks||[]).length} links`],
+            ["H1 headline", p.rawMeta?.h1 ? "✓ extracted" : "✓ AI-inferred"],
+            ["Brand keywords", `${(p.assetKeywords||[]).length} keywords`],
+          ].map(([k, v]) => (
+            <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, color: "#9ca3af" }}>
+              <span>{k}</span><span style={{ color: "#e5e7eb", fontWeight: 600 }}>{v}</span>
+            </div>
+          ))}
 
           <div style={{ flex: 1 }} />
-          <button style={{ width: "100%", background: pc, color: cc(pc), border: "none", borderRadius: 8, padding: "10px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Confirm & Build →</button>
+          <button style={{ width: "100%", background: pc, color: cc(pc), border: "none", borderRadius: 6, padding: "10px 0", fontSize: 13, fontWeight: 700, cursor: "pointer", marginTop: 14 }}>Confirm & Build →</button>
         </div>
       </div>
     </div>
