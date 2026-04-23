@@ -281,12 +281,13 @@ async function genCampaignHTML(p) {
 
   const siteImages = (p.imageUrls || []).slice(0, 6);
   const fallbackImgs = buildKeywordImages(p);
-  const allImages = siteImages.length >= 4
-    ? siteImages
-    : [...siteImages, ...fallbackImgs].slice(0, 6);
-  const imageBlock = `\nImages to use — embed these directly as <img src="..."> or background-image: url(...) — do NOT leave any image placeholders:\n${allImages.map((u,i) => `img${i+1}: ${u}`).join("\n")}`;
+  const imgs = siteImages.length >= 4 ? siteImages : [...siteImages, ...fallbackImgs].slice(0, 6);
+  const heroUrl  = imgs[0] || `https://picsum.photos/seed/${encodeURIComponent(p.companyName||'co')}0/1400/900`;
+  const card1Url = imgs[1] || `https://picsum.photos/seed/${encodeURIComponent(p.companyName||'co')}1/600/400`;
+  const card2Url = imgs[2] || `https://picsum.photos/seed/${encodeURIComponent(p.companyName||'co')}2/600/400`;
+  const card3Url = imgs[3] || `https://picsum.photos/seed/${encodeURIComponent(p.companyName||'co')}3/600/400`;
+  const bgUrl    = imgs[4] || heroUrl;
 
-  // Detect dark brand
   const isDarkBrand = (() => {
     try {
       const pc = p.primaryColor || "#fff";
@@ -295,50 +296,55 @@ async function genCampaignHTML(p) {
     } catch { return false; }
   })();
 
-  const sysPrompt = "You create stunning, brand-faithful campaign landing pages as single self-contained HTML files. You MUST use all provided image URLs in the page — embed them directly as <img src> or CSS background-image. Never use placeholder images or leave image slots empty. Return ONLY the HTML starting with <!DOCTYPE html>. No markdown, no backticks, no explanation.";
+  const pc = p.primaryColor || "#0076BD";
+  const sc = p.secondaryColor || "#7C3AED";
+  const co = p.companyName || "Company";
+  const ca = p.campaignName || "Campaign";
+  const navLinks = (p.navLinks || ["Home","Products","About","Contact"]).join(", ");
 
-  const userPrompt = `Create a campaign/event landing page for ${p.companyName}'s "${p.campaignName}" campaign that looks EXACTLY like it was made by ${p.companyName}'s own design team.
+  const sysPrompt = "You are an expert web designer. Create a complete, self-contained campaign landing page HTML file. Return ONLY valid HTML starting with <!DOCTYPE html>. No markdown fences, no explanation.";
 
-BRAND IDENTITY:
-- Company: ${p.companyName} (${p.url})
+  const userPrompt = `Build a high-fidelity campaign landing page for ${co}'s "${ca}" campaign.
+
+BRAND TOKENS:
+- Primary: ${pc}${isDarkBrand ? " — DARK BRAND: use #000/#111 backgrounds, white text, UPPERCASE headlines" : ""}
+- Secondary: ${sc}
+- Font: system-ui, -apple-system, sans-serif
 - Industry: ${p.industry}
-- Site visual style: ${p.siteDescription}
-- Primary color: ${p.primaryColor} ${isDarkBrand ? "(DARK brand — use BLACK/dark backgrounds like their real site)" : ""}
-- Secondary color: ${p.secondaryColor}
-- Brand personality: ${isDarkBrand ? "Bold, athletic, minimal. Think Nike/Apple — dark bg, full-bleed imagery, UPPERCASE bold headlines, white text" : "Professional, modern, brand-forward"}
+- Campaign: ${p.campaignDescription}
+- Products: ${p.products?.join(", ")}
 
-CAMPAIGN DETAILS:
-- Campaign name: ${p.campaignName}
-- Description: ${p.campaignDescription}
-- Products/Services featured: ${p.products?.join(", ")}
-- Urgent trigger context: ${p.urgentCampaignTrigger}
-${imageBlock}
+IMAGE URLS — copy these strings EXACTLY into your HTML (do not shorten or rename them):
+• Hero background  → "${heroUrl}"
+• Card 1 image     → "${card1Url}"
+• Card 2 image     → "${card2Url}"
+• Card 3 image     → "${card3Url}"
+• Section bg       → "${bgUrl}"
 
-NAV: Use these real links — ${(p.navLinks || ["Home","Products","About","Contact"]).join(", ")} — with "${p.campaignName}" as the active/highlighted item.
+NAV LINKS: ${navLinks}
 
-STRICT DESIGN RULES:
-${isDarkBrand ? `
-- Background: #000 or #111 (NEVER white or light grey)
-- Text: white (#fff) — UPPERCASE for headlines, tracking wide
-- Hero: full-bleed image (use img1 if provided) with bold white overlaid text
-- Buttons: white bg with black text, OR outlined white, square corners (border-radius: 2-4px max)
-- Product cards: dark (#111/#1a1a1a) background cards with thin borders (#222)
-- Typography: heavy weight (font-weight: 900), large (60-80px hero)
-- Absolutely NO rounded cards, NO light backgrounds, NO generic SaaS look` : `
-- Use ${p.primaryColor} as the dominant color throughout
-- Clean, professional layout matching their site aesthetic
-- Hero with their brand color gradient or real image overlay
-- Rounded cards, clean white sections`}
+REQUIRED SECTIONS (in order):
+1. <nav> sticky, ${isDarkBrand ? "background:#111" : `background:${pc}`}, ${co} logo (bold, white), nav links, CTA button
+2. <section id="hero"> height:100vh, background-image:url("${heroUrl}") center/cover no-repeat, overlay rgba(0,0,0,${isDarkBrand ? "0.55" : "0.4"}), centered white text: huge headline (${isDarkBrand ? "font-weight:900;text-transform:uppercase;font-size:clamp(48px,8vw,96px)" : "font-weight:800;font-size:clamp(40px,6vw,72px)"}), subtext, two CTA buttons
+3. <section id="products"> ${isDarkBrand ? "background:#000" : "background:#f9fafb"}, 3 cards side by side, each card has <img src="CARD_URL" style="width:100%;height:220px;object-fit:cover"> at top, product name, description below
+4. <section id="showcase"> full-width, background-image:url("${bgUrl}") center/cover, dark overlay, bold centered text, stat numbers
+5. <section id="register"> ${isDarkBrand ? "background:#111" : `background:${pc}`}, email input + submit button, centered layout
+6. <footer> dark background, ${co} name, nav links, copyright
 
-PAGE STRUCTURE:
-1. Sticky nav — ${p.companyName} logo left, nav links, CTA button right
-2. Hero — full-bleed (100vh), use img1 as background-image with a dark overlay, campaign headline in huge bold text, subtext, 1-2 CTAs
-3. Campaign highlights — 3 cards showing the campaign's key offers/products using real product names
-4. ${isDarkBrand ? "Full-bleed product showcase section with large imagery" : "Stats/social proof section"}  
-5. Email capture / register for event section
-6. Footer in brand colors
+CSS RULES:
+${isDarkBrand ? `- All section backgrounds: #000 or #111 (never white or light)
+- All text: #fff
+- Headlines: text-transform:uppercase; letter-spacing:0.05em; font-weight:900
+- Buttons: background:#fff; color:#000; border-radius:2px; padding:14px 32px; font-weight:700; text-transform:uppercase
+- Cards: background:#111; border:1px solid #222; border-radius:0` : `- Primary color ${pc} used for nav, buttons, accents
+- Cards: background:#fff; border-radius:12px; box-shadow:0 2px 12px rgba(0,0,0,0.08)
+- Buttons: background:${pc}; color:#fff; border-radius:8px; padding:14px 32px; font-weight:700`}
+- img tags: always include style="display:block;width:100%;object-fit:cover"
+- * { box-sizing:border-box; margin:0; padding:0 }
+- body { font-family:system-ui,-apple-system,sans-serif }
 
-The result must be INDISTINGUISHABLE from ${p.companyName}'s real website — a visitor should think this was built by their internal team.`;
+Output a single complete HTML file. All CSS in a <style> tag in <head>. No external CSS files.`;
+
 
   let htmlResult = null;
 
@@ -352,7 +358,7 @@ The result must be INDISTINGUISHABLE from ${p.companyName}'s real website — a 
       },
       body: JSON.stringify({
         model: import.meta.env.VITE_MODEL,
-        max_tokens: 4000,
+        max_tokens: 8000,
         system: sysPrompt,
         messages: [{ role: "user", content: userPrompt }]
       })
