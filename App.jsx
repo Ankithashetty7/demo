@@ -514,8 +514,28 @@ function BrandedMockup({ p }) {
 }
 
 function buildKeywordImages(p) {
+  // Use AI-extracted asset keywords for contextual loremflickr images
+  const keywords = p.assetKeywords;
+  if (keywords?.length > 0) {
+    return Array.from({ length: 8 }, (_, i) => {
+      // Take first two words of keyword phrase for better Flickr matching
+      const kw = keywords[i % keywords.length].split(" ").slice(0, 2).join(",");
+      return `https://loremflickr.com/600/420/${encodeURIComponent(kw)}?lock=${i + 1}`;
+    });
+  }
+  // Fallback: industry-curated Unsplash IDs — with broader matching
   const ind = (p.industry || "default").toLowerCase();
-  const key = Object.keys(IMAGE_DICT).find(k => ind.includes(k.split(" ")[0])) || "default";
+  const ALIASES = {
+    "healthcare & wellness": ["health", "medical", "pharma", "clinic", "wellness", "hospital"],
+    "financial services": ["financ", "bank", "invest", "insurance", "fintech", "wealth"],
+    "retail & commerce": ["retail", "shop", "commerce", "ecommerce", "e-commerce", "fashion", "apparel", "store", "brand", "product"],
+    "automotive": ["auto", "car", "vehicle", "motor", "drive", "fleet", "electric"],
+    "education": ["edu", "university", "college", "school", "learn", "academ"],
+    "travel & hospitality": ["travel", "hotel", "hospit", "resort", "airline", "tourism"],
+    "food & beverage": ["food", "cafe", "coffee", "restaurant", "beverage", "drink"],
+    "enterprise technology": ["tech", "software", "platform", "saas", "digital", "enterprise", "cloud", "ai", "data"],
+  };
+  const key = Object.keys(ALIASES).find(k => ALIASES[k].some(a => ind.includes(a))) || "default";
   const ids = IMAGE_DICT[key] || IMAGE_DICT["default"];
   return ids.map(id => `https://images.unsplash.com/photo-${id}?w=600&h=420&fit=crop&auto=format`);
 }
@@ -1055,29 +1075,32 @@ function Screen4({ p }) {
           </div>
         </div>
 
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "auto", background: "#1e1e1e", backgroundImage: "radial-gradient(#333 1px, transparent 1px)", backgroundSize: "32px 32px" }}>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden", background: "#1e1e1e", backgroundImage: "radial-gradient(#333 1px, transparent 1px)", backgroundSize: "32px 32px" }}>
 
-          <div style={{ width: "1280px", height: "800px", background: "white", boxShadow: "0 0 0 1px #333, 0 30px 60px rgba(0,0,0,0.5)", position: "relative", transform: "scale(0.6)", transformOrigin: "center", transition: "transform 0.2s ease-out" }}>
+          {/* Wrapper clips to exact visual size — prevents horizontal overflow */}
+          <div style={{ position: "relative", width: "896px", height: "560px", flexShrink: 0, overflow: "hidden", boxShadow: "0 0 0 1px #333, 0 30px 60px rgba(0,0,0,0.5)" }}>
+            {/* 1280×800 canvas scaled 0.7x from top-left → fills wrapper exactly */}
+            <div style={{ width: "1280px", height: "800px", background: "white", position: "absolute", top: 0, left: 0, transform: "scale(0.7)", transformOrigin: "top left" }}>
 
-            {/* Real website screenshot via image.thum.io — no iframe, no CSP issue */}
-            {screenshotUrl && !screenshotFailed ? (
-              <img
-                src={screenshotUrl}
-                alt={`${p.companyName} website`}
-                style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top", display: "block" }}
-                onError={() => setScreenshotFailed(true)}
-              />
-            ) : (
-              <BrandedMockup p={p} />
-            )}
+              {screenshotUrl && !screenshotFailed ? (
+                <img
+                  src={screenshotUrl}
+                  alt={`${p.companyName} website`}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top", display: "block" }}
+                  onError={() => setScreenshotFailed(true)}
+                />
+              ) : (
+                <BrandedMockup p={p} />
+              )}
 
-            <div style={{ position: "absolute", inset: 0, pointerEvents: "none", border: `4px solid ${pc}`, opacity: scanDone ? 1 : 0, transition: "opacity 0.3s", zIndex: 10 }}></div>
+              <div style={{ position: "absolute", inset: 0, pointerEvents: "none", border: `4px solid ${pc}`, opacity: scanDone ? 1 : 0, transition: "opacity 0.3s", zIndex: 10 }}></div>
 
-            {!scanDone && (
-              <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 10 }}>
-                <div style={{ position: "absolute", left: 0, right: 0, height: 4, background: `linear-gradient(90deg,transparent,${pc},transparent)`, animation: "scanLine 1.2s ease forwards", top: 0, boxShadow: `0 0 15px ${pc}` }} />
-              </div>
-            )}
+              {!scanDone && (
+                <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 10 }}>
+                  <div style={{ position: "absolute", left: 0, right: 0, height: 4, background: `linear-gradient(90deg,transparent,${pc},transparent)`, animation: "scanLine 1.2s ease forwards", top: 0, boxShadow: `0 0 15px ${pc}` }} />
+                </div>
+              )}
+            </div>
           </div>
 
           {ann1 && (
@@ -2133,9 +2156,8 @@ export default function App() {
     setProspect(p);
     const siteImages = p.imageUrls || [];
     setDamImages(siteImages.length >= 4 ? siteImages : buildKeywordImages(p));
-    setTimeout(() => {
-      genCampaignHTML(p).then(html => html && setCampHtml(html)).catch(() => { });
-    }, 4000);
+    // Start campaign HTML generation immediately — no delay — so it's ready well before Screen 14
+    genCampaignHTML(p).then(html => html && setCampHtml(html)).catch(() => { });
     setPhase("launchpad");
   };
 
