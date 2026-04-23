@@ -1,0 +1,2146 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+
+const STYLE = `
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'DM Sans',sans-serif;}
+@keyframes hsPulse{0%{transform:translate(-50%,-50%) scale(1);opacity:.65;}65%{transform:translate(-50%,-50%) scale(2.8);opacity:0;}100%{transform:translate(-50%,-50%) scale(2.8);opacity:0;}}
+@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(7px);}to{opacity:1;transform:translateY(0);}}
+@keyframes spin{to{transform:rotate(360deg);}}
+@keyframes execDot{0%,80%,100%{opacity:.2;}40%{opacity:1;}}
+@keyframes notifIn{from{opacity:0;transform:translateX(14px);}to{opacity:1;transform:translateX(0);}}
+@keyframes slideUp{from{opacity:0;transform:translateY(16px);}to{opacity:1;transform:translateY(0);}}
+@keyframes scaleIn{from{opacity:0;transform:scale(.96);}to{opacity:1;transform:scale(1);}}
+@keyframes barFill{from{width:0%;}to{width:var(--w,100%);}}
+@keyframes scanLine{0%{top:0%;opacity:.6;}100%{top:100%;opacity:0;}}
+@keyframes annotationIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+@keyframes liveDot{0%,100%{opacity:1;}50%{opacity:.3;}}
+.sc{animation:fadeIn .22s ease;}
+.tt{animation:fadeUp .18s ease;}
+.ni{animation:notifIn .32s ease .4s both;}
+.su{animation:slideUp .3s ease both;}
+.si{animation:scaleIn .25s ease both;}
+.scroll::-webkit-scrollbar{width:5px;}
+.scroll::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px;}
+`;
+
+
+
+// ── Real Unsplash Image Dictionary mapped by Industry ─────────────────────────
+const IMAGE_DICT = {
+  "healthcare & wellness": ["1576091160399-112ba8d25d1d", "1584308666744-247e8f68ca39", "1516549655169-df83a0774514", "1532938911079-1b06ac7ceec7", "1551076805-e18690c50f15", "1581056771107-11a4b09a56e1", "1505751172876-fa14356aba70", "1527613426400-cce73062cfa7"],
+  "financial services": ["1611974789855-9c2a0a7236a3", "1556742049-0cfed4f6a45d", "1579621970163-a41c86bac431", "1450101499163-c8848c66cb85", "1590283603385-17ffb3a7f29f", "1565514020179-026b92b2d08b", "1601597111164-4f336e0160b6", "1554224155-6725b3076ce9"],
+  "retail & commerce": ["1441984904996-e0b6ba687e04", "1483985988355-763728e1935b", "1445205170230-053b83016050", "1472851294608-062f824d29cc", "1523381210434-271e8be1f52b", "1460353581641-378add9401ad", "1558769132-cb1aea458c5e", "1485230821035-77de664c39c8"],
+  "automotive": ["1492144534655-ae79c964c9d7", "1503376713356-ab0e19a3b5a7", "1552519507-da3b142c6e3d", "1583123637159-8fa9fbb00d06", "1549317661-bd32c8ce0db2", "1485291571150-772bcfc10ed5", "1533473359331-01d5201cb5c1", "1502877338535-766d1452684c"],
+  "education": ["1523050854058-8df90110c9f1", "1509062522246-3755977927d7", "1427504141085-329e55182062", "1524178232363-1ecef6156e0d", "1503676260728-1c00da094a0b", "1434030216411-0b793f4b4173", "1513258496099-481a80fa18c7", "1497633762465-e3dfe56b00c2"],
+  "travel & hospitality": ["1436491865332-7a61a3518fdf", "1476514525535-07fb3b4ae5f1", "1501785888041-af3ef285b460", "1445019980597-93e408df3cb2", "1540541338-8c272ef6d8e2", "1566073771259-6a8506099945", "1520260497591-112f2f40a3f4", "1495562569060-2eec283d3391"],
+  "food & beverage": ["1497935586351-b67a49e012bf", "1509042239860-f550ce710b93", "1445116864225-8bafae29a3d1", "1511920170033-f8396924c348", "1498654896293-37aacf113fd9", "1481833761820-0509d32170b7", "1463183547458-6a4a61b8f05a", "1482049142915-eb3c2ab21f64"],
+  "enterprise technology": ["1518770660439-4636190af475", "1504639725590-34d0984388bd", "1550751827-4bd374c3f58b", "1451187580459-43490279c0fa", "1460925895917-afdab827c52f", "1504384308090-c894fdcc538d", "1551288049-bebda4e38f71", "1531297172867-1ea55333fccf"],
+  "default": ["1497366216548-37526070297c", "1522071820081-009f0129c71c", "1454165804606-c3d57bc86b40", "1515169061895-373a0e5b0260", "1521737604893-d14cc237f11d", "1507679622140-615266c150fa", "1552664730-d307ca884978", "1531482615713-2defd0a5192b"]
+};
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+const ip = (str, p) => {
+  if (!str || !p) return str || "";
+  return str
+    .replace(/\{co\}/g, p.companyName || "Your Company")
+    .replace(/\{ca\}/g, p.campaignName || "New Campaign")
+    .replace(/\{cd\}/g, p.campaignDescription || "")
+    .replace(/\{ind\}/g, p.industry || "technology")
+    .replace(/\{who\}/g, p.personaName || "Maya")
+    .replace(/\{role\}/g, p.personaTitle || "Head of Digital")
+    .replace(/\{trigger\}/g, p.urgentCampaignTrigger || "An urgent business need has accelerated the timeline");
+};
+
+const cc = hex => {
+  if (!hex || hex.length < 7) return "#fff";
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  return .299 * r + .587 * g + .114 * b > 148 ? "#111827" : "#ffffff";
+};
+
+const initials = name => name ? name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) : "?";
+
+// Bypasses CSP blocks on iframes
+const getProxyUrl = (url) => {
+  if (!url) return "";
+  return `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+};
+
+// ── Smart Industry Detection ──────────────────────────────────────────────────
+const detectIndustry = url => {
+  const d = (url || "").toLowerCase();
+  if (/(health|hospital|medic|pharma|clinic|care|bio|wellness|therapy)/.test(d)) return {
+    industry: "healthcare & wellness", products: ["Patient Experience Platform", "Clinical Data Hub", "Telehealth Suite"],
+    campaignName: "Digital Health Innovation Summit", campaignDescription: "Transforming patient care through intelligent digital experiences and connected health technology.",
+    urgentCampaignTrigger: "A competing health system just announced their digital transformation, accelerating our timeline",
+    assetKeywords: ["medical team technology", "patient care digital", "healthcare innovation", "clinical excellence"],
+    contentClusterTitles: ["How Digital Health Platforms Are Reshaping Patient Outcomes in 2026", "5 Ways AI-Powered Clinical Tools Reduce Provider Burnout", "The Complete Guide to HIPAA-Compliant Digital Patient Experiences", "Why Healthcare Leaders Are Investing in Connected Digital Ecosystems"]
+  };
+  if (/(bank|financ|capital|invest|fund|insur|credit|wealth|asset)/.test(d)) return {
+    industry: "financial services", products: ["Digital Banking Platform", "Wealth Management Suite", "Risk Intelligence"],
+    campaignName: "NextGen Banking Experience", campaignDescription: "Delivering seamless, secure, and personalized financial services across every digital touchpoint.",
+    urgentCampaignTrigger: "A fintech disruptor just launched a competing product targeting our core customer segment",
+    assetKeywords: ["digital banking mobile", "financial technology", "investment wealth", "banking security"],
+    contentClusterTitles: ["The Future of Digital Banking: What Customers Expect in 2026", "How Open Banking APIs Are Unlocking New Revenue Streams", "Digital Wealth Management: A Guide for Modern Investors", "Why Financial Institutions Are Prioritizing Personalized Digital Experiences"]
+  };
+
+  // Added nike, adidas, shoe, apparel, etc. here so it defaults correctly to Retail
+  if (/(retail|shop|store|fashion|apparel|cloth|brand|luxury|beauty|cosmetic|nike|adidas|shoe|wear)/.test(d)) return {
+    industry: "retail & commerce", products: ["Digital Storefront", "Loyalty & Rewards", "Brand Experience Hub"],
+    campaignName: "Summer Style Collection 2026", campaignDescription: "Launching our boldest seasonal collection with an immersive digital-first shopping experience.",
+    urgentCampaignTrigger: "A major competitor announced an early Summer sale, requiring us to launch our campaign 3 weeks ahead",
+    assetKeywords: ["fashion lifestyle product", "retail store experience", "clothing collection", "brand aesthetic"],
+    contentClusterTitles: ["Summer 2026 Style Trends: What's Hot Right Now", "How to Build a Capsule Wardrobe with Our Summer Collection", "Behind the Design: The Story of Our Summer Collection", "Style Guide: 10 Ways to Wear Our Best-Selling Summer Pieces"]
+  };
+
+  if (/(auto|car|vehicl|motor|drive|fleet|truck|ev|electric)/.test(d)) return {
+    industry: "automotive", products: ["Vehicle Discovery Platform", "Service & Maintenance Hub", "Fleet Intelligence"],
+    campaignName: "Next Generation Launch Event", campaignDescription: "Unveiling our most advanced vehicle lineup with an exclusive digital experience for early adopters.",
+    urgentCampaignTrigger: "A competitor's EV announcement shifted market attention, requiring us to launch our campaign immediately",
+    assetKeywords: ["luxury vehicle showroom", "automotive technology", "car driving experience", "vehicle design detail"],
+    contentClusterTitles: ["Inside the Technology Powering Our Next-Generation Vehicles", "Electric vs. Hybrid: Which Is Right for You in 2026?", "The Complete Buyer's Guide to Our New Vehicle Lineup", "How Our Vehicles Are Engineered for the Future of Driving"]
+  };
+  if (/(edu|univers|college|school|learn|academ|campus|course|study)/.test(d)) return {
+    industry: "education", products: ["Learning Experience Platform", "Student Success Hub", "Research & Innovation Portal"],
+    campaignName: "Fall Enrollment 2026", campaignDescription: "Connecting prospective students with their future through personalized digital discovery experiences.",
+    urgentCampaignTrigger: "Early application deadlines have moved up, requiring immediate outreach to prospective students",
+    assetKeywords: ["campus university life", "student learning digital", "academic research lab", "graduation success"],
+    contentClusterTitles: ["Why Our Programs Are Ranked Among the Best in the Nation", "Student Success Stories: How Our Graduates Are Changing the World", "Your Complete Guide to Applying for Fall 2026", "Campus Life: What to Expect in Your First Year"]
+  };
+  if (/(travel|hotel|hospit|resort|airline|flight|tour|vacation|cruise)/.test(d)) return {
+    industry: "travel & hospitality", products: ["Digital Booking Engine", "Guest Experience Platform", "Loyalty Compass"],
+    campaignName: "Summer Escapes 2026", campaignDescription: "Inspiring wanderlust with curated summer travel experiences and exclusive member-only pricing.",
+    urgentCampaignTrigger: "Summer booking season is peaking 4 weeks early, requiring immediate campaign activation",
+    assetKeywords: ["luxury resort beach", "hotel lobby experience", "travel destination scenery", "business travel lounge"],
+    contentClusterTitles: ["The 10 Most Breathtaking Summer Destinations for 2026", "Insider Travel Hacks to Maximize Your Summer Getaway", "How Our Loyalty Program Makes Every Journey More Rewarding", "Summer Travel Trends: What's Drawing Travelers in 2026"]
+  };
+  if (/(food|cafe|coffee|restaurant|dine|burger|drink|beverage)/.test(d)) return {
+    industry: "food & beverage", products: ["Mobile Order & Pay", "Customer Rewards", "Digital Menu Hub"],
+    campaignName: "Seasonal Flavor Launch", campaignDescription: "An exclusive early-access event for our newest seasonal beverages and treats.",
+    urgentCampaignTrigger: "A viral social media trend created sudden demand for our seasonal items",
+    assetKeywords: ["artisan coffee drink", "restaurant interior", "fresh food photography", "cafe lifestyle"],
+    contentClusterTitles: ["Behind the Beans: How We Source Our Seasonal Blends", "The Ultimate Guide to Pairing Our New Pastries", "Why Digital Ordering is Changing the Cafe Experience", "Meet the Baristas Behind Your Favorite Drinks"]
+  };
+  return {
+    industry: "enterprise technology", products: ["Digital Experience Platform", "AI Analytics Suite", "Content Intelligence Hub"],
+    campaignName: "Platform Innovation Summit 2026", campaignDescription: "Showcasing our most powerful platform release — built for speed, scale, and intelligent automation.",
+    urgentCampaignTrigger: "A major industry analyst report created an immediate market window we must capture now",
+    assetKeywords: ["enterprise software interface", "digital innovation hub", "AI technology platform", "cloud computing"],
+    contentClusterTitles: ["How AI-Powered Digital Experiences Are Transforming Customer Engagement", "The Platform Buyer's Guide: What to Look for in 2026", "From Legacy to Modern: A CTO's Guide to Digital Transformation", "Why Leading Enterprises Choose Modern Content Platforms"]
+  };
+};
+
+const fallbackProspect = url => {
+  let domain = (url || "").replace(/https?:\/\//, "").replace(/www\./, "").split("/")[0];
+  let co = domain.split(".")[0];
+  co = co ? co.charAt(0).toUpperCase() + co.slice(1) : "Company";
+  const ind = detectIndustry(url);
+  const names = [["Sarah", "Chen"], ["Maya", "Patel"], ["Alex", "Johnson"], ["Jordan", "Williams"], ["Morgan", "Rodriguez"], ["Casey", "Thompson"]];
+  const nm = names[Math.floor(Math.random() * names.length)];
+  const titleOpts = ["Head of Digital Experience", "VP of Marketing", "Director of Digital Strategy", "Chief Marketing Officer", "Head of Brand & Content"];
+  const title = titleOpts[Math.floor(Math.random() * titleOpts.length)];
+  return {
+    companyName: co, personaName: `${nm[0]} ${nm[1]}`, personaTitle: title,
+    primaryColor: "#0076BD", secondaryColor: "#7C3AED", ...ind,
+    businessDescription: `${co} is a leading ${ind.industry} organization delivering exceptional experiences across digital and physical channels.`,
+    siteDescription: "Clean, professional design with bold brand colors, modern typography, and conversion-focused layouts.",
+    url: url || "https://example.com"
+  };
+};
+
+// ── API Calls (Gemini API) ─────────────────────────────────────────
+
+// Fetches real webpage content via allorigins proxy (fetch calls are NOT blocked by child-src CSP).
+// Extracts title, meta description, OG tags, h1, and a snippet of visible body text.
+// This gives Gemini actual ground truth about the page instead of guessing from the URL.
+async function fetchWebsiteSignals(url) {
+  try {
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+    const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return { signals: null, imageUrls: [] };
+    const html = await res.text();
+    const baseUrl = new URL(url).origin;
+
+    const get = (pattern) => {
+      const m = html.match(pattern);
+      return m ? (m[1] || "").replace(/<[^>]+>/g, "").trim() : "";
+    };
+
+    const title = get(/<title[^>]*>([^<]{1,200})<\/title>/i);
+    const desc = get(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']{1,400})["']/i)
+      || get(/<meta[^>]+content=["']([^"']{1,400})["'][^>]+name=["']description["']/i);
+    const ogTitle = get(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']{1,200})["']/i);
+    const ogDesc = get(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']{1,400})["']/i);
+    const ogSiteName = get(/<meta[^>]+property=["']og:site_name["'][^>]+content=["']([^"']{1,100})["']/i);
+    const keywords = get(/<meta[^>]+name=["']keywords["'][^>]+content=["']([^"']{1,300})["']/i);
+    const h1 = get(/<h1[^>]*>([^<]{1,200})<\/h1>/i);
+    const h2s = [...html.matchAll(/<h2[^>]*>([^<]{1,200})<\/h2>/gi)].slice(0, 4).map(m => m[1].trim()).join(" | ");
+
+    const bodySnippet = (html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 800));
+
+    const signals = [title, ogSiteName, ogTitle, desc, ogDesc, h1, h2s, keywords, bodySnippet]
+      .filter(Boolean).join("\n").trim();
+
+    // ── Extract real image URLs from the page ──────────────────────────────
+    const imageUrls = new Set();
+
+    // og:image / twitter:image (best quality, usually CDN-hosted)
+    [...html.matchAll(/<meta[^>]+(?:og:image|twitter:image)[^>]+content=["']([^"']+)["']/gi)]
+      .forEach(m => m[1] && !m[1].startsWith("data:") && imageUrls.add(m[1]));
+    [...html.matchAll(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:og:image|twitter:image)/gi)]
+      .forEach(m => m[1] && !m[1].startsWith("data:") && imageUrls.add(m[1]));
+
+    // srcset images (high-res)
+    [...html.matchAll(/srcset=["']([^"']+)["']/gi)].forEach(m => {
+      m[1].split(",").forEach(part => {
+        const src = part.trim().split(/\s+/)[0];
+        if (src && src.startsWith("http") && /\.(jpg|jpeg|png|webp)/i.test(src)) imageUrls.add(src);
+      });
+    });
+
+    // Regular <img src>
+    [...html.matchAll(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi)].forEach(m => {
+      const src = m[1];
+      if (!src || src.startsWith("data:") || /icon|logo|sprite|pixel|1x1|tracking|svg/i.test(src)) return;
+      const absolute = src.startsWith("http") ? src : src.startsWith("//") ? "https:" + src : baseUrl + (src.startsWith("/") ? src : "/" + src);
+      if (/\.(jpg|jpeg|png|webp)/i.test(absolute)) imageUrls.add(absolute);
+    });
+
+    const filteredImages = [...imageUrls].slice(0, 8);
+
+    return { signals: signals || null, imageUrls: filteredImages };
+  } catch {
+    return { signals: null, imageUrls: [] };
+  }
+}
+
+async function analyzeProspect(url) {
+  const endpoint = import.meta.env.VITE_API_ENDPOINT;
+
+  const { signals: pageSignals, imageUrls } = await fetchWebsiteSignals(url);
+
+  const contextBlock = pageSignals
+    ? `\n\nREAL WEBSITE CONTENT EXTRACTED FROM THE PAGE (use this as your PRIMARY source of truth):\n---\n${pageSignals}\n---\n`
+    : "";
+
+  const userPrompt = `Analyze this company website: ${url}${contextBlock}
+Return ONLY this JSON object with no other text:
+{
+  "companyName": "exact company name from the website",
+  "personaName": "realistic full name for a marketing/digital leader at this company",
+  "personaTitle": "realistic job title e.g. Head of Digital Experience, VP Marketing",
+  "primaryColor": "#hex of their dominant brand color",
+  "secondaryColor": "#hex of their secondary brand color",
+  "industry": "2-4 word description of what they ACTUALLY do (e.g. 'cycling events platform', 'specialty coffee', 'athletic footwear')",
+  "products": ["their 3 main actual products or services"],
+  "campaignName": "name of a specific, relevant campaign this company would run right now",
+  "campaignDescription": "one sentence describing what this campaign is about",
+  "urgentCampaignTrigger": "a realistic urgent business reason why this campaign launch date was moved up",
+  "assetKeywords": ["4 SPECIFIC visual keywords matching their actual content — e.g. for a cycling events site: 'cyclist racing', 'bike event crowd', 'cycling podium', 'velodrome track'"],
+  "contentClusterTitles": ["SEO article title 1 specific to their campaign","SEO article title 2","SEO article title 3","SEO article title 4"],
+  "businessDescription": "one sentence describing what this company actually does",
+  "siteDescription": "one sentence describing the visual style of their website",
+  "heroHeadline": "the main headline or tagline from their actual homepage",
+  "navLinks": ["up to 5 real navigation items from their site"],
+  "heroSubtext": "the supporting text under their main hero headline"
+}`;
+
+  const body = JSON.stringify({
+    model: import.meta.env.VITE_MODEL,
+    max_tokens: 1500,
+    system: "You analyze company websites and return ONLY a valid JSON object. No markdown. No backticks. No explanation. Just the raw JSON.",
+    messages: [{ role: "user", content: userPrompt }]
+  });
+
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "anthropic-version": "2023-06-01",
+      "x-api-key": import.meta.env.VITE_API_KEY
+    },
+    body
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.message || "Anthropic API Error");
+  const text = data.content?.[0]?.text || "";
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error("No JSON from Anthropic");
+  return { ...JSON.parse(match[0]), url, imageUrls };
+}
+
+async function genCampaignHTML(p) {
+  const endpoint = import.meta.env.VITE_API_ENDPOINT;
+
+  const siteImages = (p.imageUrls || []).slice(0, 6);
+  const imageBlock = siteImages.length
+    ? `\nReal images from their site (use as hero/product backgrounds):\n${siteImages.map((u,i) => `img${i+1}: ${u}`).join("\n")}`
+    : "";
+
+  // Detect dark brand
+  const isDarkBrand = (() => {
+    try {
+      const pc = p.primaryColor || "#fff";
+      const r = parseInt(pc.slice(1,3),16), g = parseInt(pc.slice(3,5),16), b = parseInt(pc.slice(5,7),16);
+      return .299*r+.587*g+.114*b < 60;
+    } catch { return false; }
+  })();
+
+  const sysPrompt = "You create stunning, brand-faithful campaign landing pages as single self-contained HTML files. Return ONLY the HTML starting with <!DOCTYPE html>. No markdown, no backticks, no explanation.";
+
+  const userPrompt = `Create a campaign/event landing page for ${p.companyName}'s "${p.campaignName}" campaign that looks EXACTLY like it was made by ${p.companyName}'s own design team.
+
+BRAND IDENTITY:
+- Company: ${p.companyName} (${p.url})
+- Industry: ${p.industry}
+- Site visual style: ${p.siteDescription}
+- Primary color: ${p.primaryColor} ${isDarkBrand ? "(DARK brand — use BLACK/dark backgrounds like their real site)" : ""}
+- Secondary color: ${p.secondaryColor}
+- Brand personality: ${isDarkBrand ? "Bold, athletic, minimal. Think Nike/Apple — dark bg, full-bleed imagery, UPPERCASE bold headlines, white text" : "Professional, modern, brand-forward"}
+
+CAMPAIGN DETAILS:
+- Campaign name: ${p.campaignName}
+- Description: ${p.campaignDescription}
+- Products/Services featured: ${p.products?.join(", ")}
+- Urgent trigger context: ${p.urgentCampaignTrigger}
+${imageBlock}
+
+NAV: Use these real links — ${(p.navLinks || ["Home","Products","About","Contact"]).join(", ")} — with "${p.campaignName}" as the active/highlighted item.
+
+STRICT DESIGN RULES:
+${isDarkBrand ? `
+- Background: #000 or #111 (NEVER white or light grey)
+- Text: white (#fff) — UPPERCASE for headlines, tracking wide
+- Hero: full-bleed image (use img1 if provided) with bold white overlaid text
+- Buttons: white bg with black text, OR outlined white, square corners (border-radius: 2-4px max)
+- Product cards: dark (#111/#1a1a1a) background cards with thin borders (#222)
+- Typography: heavy weight (font-weight: 900), large (60-80px hero)
+- Absolutely NO rounded cards, NO light backgrounds, NO generic SaaS look` : `
+- Use ${p.primaryColor} as the dominant color throughout
+- Clean, professional layout matching their site aesthetic
+- Hero with their brand color gradient or real image overlay
+- Rounded cards, clean white sections`}
+
+PAGE STRUCTURE:
+1. Sticky nav — ${p.companyName} logo left, nav links, CTA button right
+2. Hero — full-bleed (100vh), ${siteImages[0] ? `use img1 as background` : "brand color gradient"}, campaign headline in huge bold text, subtext, 1-2 CTAs
+3. Campaign highlights — 3 cards showing the campaign's key offers/products using real product names
+4. ${isDarkBrand ? "Full-bleed product showcase section with large imagery" : "Stats/social proof section"}  
+5. Email capture / register for event section
+6. Footer in brand colors
+
+The result must be INDISTINGUISHABLE from ${p.companyName}'s real website — a visitor should think this was built by their internal team.`;
+
+  let htmlResult = null;
+
+  try {
+    const anthropicRes = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01",
+        "x-api-key": import.meta.env.VITE_API_KEY
+      },
+      body: JSON.stringify({
+        model: import.meta.env.VITE_MODEL,
+        max_tokens: 4000,
+        system: sysPrompt,
+        messages: [{ role: "user", content: userPrompt }]
+      })
+    });
+    if (anthropicRes.ok) {
+      const data = await anthropicRes.json();
+      const text = data.content?.[0]?.text || "";
+      const match = text.match(/<!DOCTYPE html>[\s\S]*/i);
+      htmlResult = match ? match[0] : text;
+    } else {
+      console.warn("Anthropic HTML gen status not ok", anthropicRes.status);
+    }
+  } catch (e) {
+    console.error("Anthropic HTML gen failed:", e);
+  }
+
+  return htmlResult;
+}
+
+// ── Brand-Faithful Site Mockup ────────────────────────────────────────────────
+// Renders a pixel-faithful replica of the prospect's homepage using their real
+// brand data: colors, nav links, hero headline, subtext, and extracted images.
+function BrandedMockup({ p }) {
+  const pc = p.primaryColor || "#111";
+  const sc = p.secondaryColor || "#fff";
+  const textOnPrimary = cc(pc);
+  const navLinks = p.navLinks || ["Products", "Solutions", "Resources", "About"];
+  const heroImg = (p.imageUrls || [])[0];
+  const heroHeadline = p.heroHeadline || `The Future of ${p.industry}.`;
+  const heroSubtext = p.heroSubtext || p.businessDescription || "";
+
+  // Detect if this is a dark-background brand (Nike, Apple, etc.)
+  const isDark = pc === "#000000" || pc === "#111111" || pc === "#111" || pc === "#000" ||
+    (() => { try { const r = parseInt(pc.slice(1,3),16), g = parseInt(pc.slice(3,5),16), b = parseInt(pc.slice(5,7),16); return .299*r+.587*g+.114*b < 60; } catch { return false; } })();
+
+  const heroBg = heroImg
+    ? `url(${heroImg}) center/cover no-repeat`
+    : isDark
+      ? `linear-gradient(135deg, #111 0%, #222 100%)`
+      : `linear-gradient(135deg, ${pc} 0%, ${sc} 100%)`;
+
+  const navBg = isDark ? "#111" : pc;
+  const navText = isDark ? "#fff" : textOnPrimary;
+
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", background: isDark ? "#111" : "#fff", overflow: "hidden", fontFamily: "'DM Sans', sans-serif" }}>
+
+      {/* Real Nav */}
+      <div style={{ background: navBg, padding: "0 48px", display: "flex", alignItems: "center", height: 64, gap: 40, flexShrink: 0, borderBottom: isDark ? "1px solid #222" : "none" }}>
+        <span style={{ color: navText, fontWeight: 900, fontSize: 22, letterSpacing: isDark ? "0.05em" : "-0.5px", textTransform: isDark ? "uppercase" : "none" }}>{p.companyName}</span>
+        <div style={{ display: "flex", gap: 28, flex: 1 }}>
+          {navLinks.slice(0, 6).map((link, i) => (
+            <span key={i} style={{ color: navText, fontSize: 13, fontWeight: 500, opacity: 0.85, cursor: "pointer", whiteSpace: "nowrap" }}>{link}</span>
+          ))}
+        </div>
+        <button style={{ background: isDark ? "#fff" : navText, color: isDark ? "#111" : pc, border: "none", borderRadius: isDark ? 2 : 6, padding: "10px 22px", fontWeight: 700, fontSize: 13, cursor: "pointer", letterSpacing: isDark ? "0.05em" : 0 }}>
+          {isDark ? "SHOP NOW" : "Get Started"}
+        </button>
+      </div>
+
+      {/* Hero */}
+      <div style={{ flex: heroImg ? "0 0 480px" : "0 0 420px", background: heroBg, position: "relative", display: "flex", alignItems: isDark ? "flex-end" : "center", padding: isDark ? "0 64px 56px" : "0 64px", overflow: "hidden", flexShrink: 0 }}>
+        {/* Dark overlay for readability */}
+        <div style={{ position: "absolute", inset: 0, background: isDark
+          ? "linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.2) 60%)"
+          : heroImg ? "linear-gradient(90deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.1) 100%)" : "none"
+        }} />
+        <div style={{ position: "relative", zIndex: 1, maxWidth: 700 }}>
+          {isDark && <div style={{ fontSize: 11, color: sc || "#f5a623", fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 12 }}>{p.campaignName}</div>}
+          <div style={{ color: "#fff", fontWeight: 900, fontSize: isDark ? 68 : 52, lineHeight: 1.05, marginBottom: 18, letterSpacing: isDark ? "-0.02em" : "-0.01em", textTransform: isDark ? "uppercase" : "none" }}>
+            {heroHeadline}
+          </div>
+          {heroSubtext && !isDark && (
+            <div style={{ color: "rgba(255,255,255,0.88)", fontSize: 17, lineHeight: 1.65, marginBottom: 32, maxWidth: 540 }}>{heroSubtext}</div>
+          )}
+          <div style={{ display: "flex", gap: 14 }}>
+            <button style={{ background: isDark ? "#fff" : pc, color: isDark ? "#111" : textOnPrimary, border: "none", borderRadius: isDark ? 2 : 8, padding: isDark ? "14px 32px" : "15px 32px", fontWeight: 700, fontSize: 14, cursor: "pointer", letterSpacing: isDark ? "0.08em" : 0, textTransform: isDark ? "uppercase" : "none" }}>
+              {isDark ? "SHOP NOW" : "Get Started"}
+            </button>
+            {!isDark && (
+              <button style={{ background: "transparent", color: "#fff", border: "2px solid rgba(255,255,255,0.7)", borderRadius: 8, padding: "13px 32px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Learn More</button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Product strip / features */}
+      <div style={{ flex: 1, background: isDark ? "#000" : "#f9fafb", padding: "40px 48px", overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
+          {(p.products || ["Product 1","Product 2","Product 3"]).slice(0, 3).map((prod, i) => {
+            const cardImg = (p.imageUrls || [])[i + 1];
+            return (
+              <div key={i} style={{ background: isDark ? "#111" : "#fff", borderRadius: isDark ? 4 : 12, overflow: "hidden", border: isDark ? "1px solid #222" : "1px solid #e5e7eb" }}>
+                {cardImg ? (
+                  <div style={{ height: 140, background: `url(${cardImg}) center/cover`, flexShrink: 0 }} />
+                ) : (
+                  <div style={{ height: 120, background: isDark ? `linear-gradient(135deg,#222,#333)` : `linear-gradient(135deg,${pc}22,${sc}22)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32 }}>
+                    {["👟","⚡","🏆"][i]}
+                  </div>
+                )}
+                <div style={{ padding: "16px 18px" }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: isDark ? "#fff" : "#111", marginBottom: 6, textTransform: isDark ? "uppercase" : "none", letterSpacing: isDark ? "0.05em" : 0 }}>{prod}</div>
+                  <div style={{ fontSize: 12, color: isDark ? "#999" : "#6b7280", lineHeight: 1.5 }}>Explore {p.companyName}'s latest {p.industry} collection.</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function buildKeywordImages(p) {
+  const ind = p.industry || "default";
+  // Use picsum.photos — works in sandboxed artifact environments unlike Unsplash
+  const indHash = (ind || "default").split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  return Array.from({ length: 8 }, (_, i) =>
+    `https://picsum.photos/seed/${indHash + i * 17}/600/420`
+  );
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+function Sidebar({ aiOpen, active, dam, p }) {
+  const pc = p?.primaryColor || "#0076BD";
+  const co = p?.companyName || "Acquia";
+  const item = (id, icon, label, sub) => {
+    const isActive = active === id;
+    return (
+      <div key={id} style={{
+        padding: sub ? "5px 12px 5px 28px" : "5px 12px", cursor: "pointer",
+        background: isActive ? "#EFF6FF" : "transparent",
+        borderLeft: isActive ? "3px solid #2563EB" : sub ? "2px solid #e5e7eb" : "3px solid transparent",
+        color: isActive ? "#1d4ed8" : "#374151", fontWeight: isActive ? 600 : 400, fontSize: 13,
+        display: "flex", alignItems: "center", gap: 6, borderRadius: "0 4px 4px 0"
+      }}>
+        <span style={{ fontSize: 12 }}>{icon}</span>{label}
+      </div>
+    );
+  };
+  return (
+    <div style={{ width: 192, background: "#fff", borderRight: "1px solid #e5e7eb", display: "flex", flexDirection: "column", height: "100%", flexShrink: 0 }}>
+      <div style={{ padding: "14px 12px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ width: 28, height: 28, borderRadius: 6, background: "linear-gradient(135deg,#0BB5D6,#0076BD)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 14, fontWeight: 800 }}>⚡</div>
+        <span style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>Acquia Source</span>
+      </div>
+      <div style={{ flex: 1, overflow: "auto", padding: "8px 0" }} className="scroll">
+        {item("home", "⊞", "Home")}
+        <div style={{ padding: "5px 12px", display: "flex", alignItems: "center", gap: 6, cursor: "pointer", color: "#374151", fontSize: 13 }}>
+          <span style={{ fontSize: 12 }}>⚡</span><span style={{ flex: 1 }}>AI</span><span style={{ fontSize: 10 }}>▾</span>
+        </div>
+        {aiOpen && <>
+          {item("new-chat", "", "New Chat", true)}
+          {item("conversations", "", "Conversations", true)}
+          {item("acquia-agents", "", "Acquia Agents", true)}
+          {item("resources", "", "Resources", true)}
+          {item("settings", "", "Settings", true)}
+        </>}
+        {item("sites", "🌐", "Sites")}
+        {dam && <>
+          {item("home2", "⬡", "Apps")}
+          <div style={{ padding: "5px 12px", display: "flex", alignItems: "center", gap: 6, cursor: "pointer", color: active === "assets" ? "#1d4ed8" : "#374151", fontSize: 13, background: active === "assets" ? "#EFF6FF" : "transparent", borderLeft: active === "assets" ? "3px solid #2563EB" : "3px solid transparent", fontWeight: active === "assets" ? 600 : 400 }}>
+            <span style={{ fontSize: 12 }}>◫</span><span style={{ flex: 1 }}>Assets</span><span style={{ fontSize: 10 }}>▾</span>
+          </div>
+          {item("assets-sub", "", "Assets", true)}
+          {item("insights", "", "Insights", true)}
+          {item("dam-details", "", "Acquia DAM Details", true)}
+          {item("web-gov", "", "Web governance")}
+          <div style={{ padding: "5px 12px", color: "#374151", fontSize: 13, cursor: "pointer" }}>••• More</div>
+          {item("content-perf", "", "Content Performance", true)}
+          {item("security", "", "Security & Delivery", true)}
+          {item("campaigns", "", "Campaigns", true)}
+        </>}
+      </div>
+      <div style={{ padding: "10px 12px", borderTop: "1px solid #e5e7eb" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <div style={{ width: 18, height: 18, borderRadius: 3, background: pc, flexShrink: 0 }} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{co}</span>
+        </div>
+        <div style={{ fontSize: 11, color: "#9ca3af", cursor: "pointer" }}>← Collapse</div>
+      </div>
+    </div>
+  );
+}
+
+function TopBar({ crumbs }) {
+  return (
+    <div style={{ height: 40, borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", padding: "0 16px", gap: 8, fontSize: 13, color: "#6b7280", background: "#fff", flexShrink: 0 }}>
+      {crumbs.map((c, i) => (
+        <span key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {i > 0 && <span style={{ color: "#d1d5db" }}>|</span>}
+          <span style={{ color: i < crumbs.length - 1 ? "#2563EB" : "#374151" }}>{c}</span>
+        </span>
+      ))}
+      <span style={{ marginLeft: 8, color: "#6b7280", display: "flex", alignItems: "center", gap: 4, fontSize: 13 }}>
+        <span style={{ fontSize: 12 }}>📁</span> Crest <span style={{ fontSize: 10 }}>▾</span>
+      </span>
+    </div>
+  );
+}
+
+function ChatHeader({ onClose }) {
+  return (
+    <div style={{ padding: "10px 16px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: 10, background: "#fff" }}>
+      <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#C084FC,#7C3AED)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 13 }}>JA</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "#111827" }}>Chat with Jacob</div>
+        <div style={{ fontSize: 11, color: "#6b7280", display: "flex", gap: 8 }}><span>📁 Jacob</span><span>Website Builder</span></div>
+      </div>
+      <span style={{ fontSize: 12, color: "#6b7280", cursor: "pointer" }}>⋯</span>
+      <button style={{ background: "none", border: "1px solid #e5e7eb", borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer", color: "#374151" }} onClick={onClose}>✕ Close</button>
+    </div>
+  );
+}
+
+function AgentMsg({ text, thinking, p }) {
+  const [thinkOpen, setThinkOpen] = useState(false);
+  return (
+    <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+      <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#C084FC,#7C3AED)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>JA</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 12, color: "#7C3AED", fontWeight: 600, marginBottom: 4 }}>Jacob • Website Builder <span style={{ color: "#9ca3af", fontWeight: 400 }}>just now</span></div>
+        {thinking && (
+          <div style={{ background: "#FDF2F8", border: "1px solid #F5D0FE", borderRadius: 8, padding: "8px 12px", marginBottom: 8, fontSize: 12, color: "#6b7280" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontWeight: 600, color: "#7C3AED" }} onClick={() => setThinkOpen(o => !o)}>
+              <span>{thinkOpen ? "▼" : "▶"}</span> Thinking…
+            </div>
+            {thinkOpen && <div style={{ marginTop: 6, color: "#374151" }}>{ip(thinking, p)}</div>}
+          </div>
+        )}
+        <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 12, borderTopLeftRadius: 2, padding: "10px 14px", fontSize: 13, color: "#111827", lineHeight: 1.6 }}>{ip(text, p)}</div>
+        <div style={{ display: "flex", gap: 12, marginTop: 6, fontSize: 16 }}>
+          <span style={{ cursor: "pointer" }}>⊡</span><span style={{ cursor: "pointer" }}>👍</span><span style={{ cursor: "pointer" }}>👎</span><span style={{ cursor: "pointer" }}>↺</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UserMsg({ text, p }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+      <div style={{ background: "#f3f4f6", borderRadius: 12, borderBottomRightRadius: 2, padding: "10px 14px", fontSize: 13, color: "#111827", maxWidth: "68%", lineHeight: 1.6 }}>{ip(text, p)}</div>
+    </div>
+  );
+}
+
+function ExecMsg({ step, total, pct, text, p }) {
+  return (
+    <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+      <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#C084FC,#7C3AED)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>JA</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <span style={{ display: "flex", gap: 4 }}>
+            {[0, 1, 2].map(i => (
+              <span key={i} style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: "#7C3AED", animation: `execDot 1.2s ease ${i * 0.2}s infinite` }} />
+            ))}
+          </span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Executing</span>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#10B981", display: "inline-block" }} />
+        </div>
+        <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#374151", lineHeight: 1.6 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <strong>Step {step}/{total}: </strong>
+            <span style={{ color: "#10B981", fontWeight: 600 }}>{pct}%</span>
+          </div>
+          <div style={{ marginBottom: 8 }}>{ip(text, p)}</div>
+          <div style={{ height: 4, background: "#e5e7eb", borderRadius: 2, overflow: "hidden" }}>
+            <div style={{ height: "100%", background: "linear-gradient(90deg,#2563EB,#7C3AED)", borderRadius: 2, width: `${pct}%`, animation: `barFill .8s ease both`, ["--w"]: `${pct}%` }} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChatInput({ value, placeholder, p }) {
+  const hasVal = (value || "").trim().length > 0;
+  return (
+    <div style={{ padding: "12px 16px", borderTop: "1px solid #e5e7eb", background: "#fff" }}>
+      <div style={{ display: "flex", alignItems: "center", background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 24, padding: "8px 14px", gap: 8 }}>
+        <span style={{ flex: 1, fontSize: 13, color: hasVal ? "#111827" : "#9ca3af" }}>{ip(value || placeholder || "Message Jacob…", p)}</span>
+        <div style={{ width: 32, height: 32, borderRadius: "50%", background: hasVal ? "#2563EB" : "#e5e7eb", display: "flex", alignItems: "center", justifyContent: "center", color: hasVal ? "#fff" : "#9ca3af", flexShrink: 0, cursor: "pointer" }}>➤</div>
+      </div>
+      <div style={{ textAlign: "center", fontSize: 10, color: "#9ca3af", marginTop: 6 }}>Acquia AI can make mistakes.</div>
+    </div>
+  );
+}
+
+function SkillBadge({ label }) {
+  return <span style={{ background: "#EFF6FF", color: "#2563EB", border: "1px solid #DBEAFE", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 500, marginRight: 6 }}>{label}</span>;
+}
+
+function PlanStep({ n, title, desc, p }) {
+  return (
+    <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+      <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#2563EB", color: "#fff", fontWeight: 700, fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{n}</div>
+      <div>
+        <strong style={{ fontSize: 13, color: "#111827" }}>{ip(title, p)}</strong>
+        <div style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.5, marginTop: 2 }}>{ip(desc, p)}</div>
+      </div>
+    </div>
+  );
+}
+
+// ── Hotspot + Tooltip ─────────────────────────────────────────────────────────
+function Hotspot({ x, y, onClick }) {
+  return (
+    <div onClick={onClick} style={{ position: "absolute", left: `${x}%`, top: `${y}%`, transform: "translate(-50%,-50%)", pointerEvents: "auto", cursor: "pointer", zIndex: 90 }}>
+      {[0, 1].map(i => (
+        <div key={i} style={{ position: "absolute", top: "50%", left: "50%", width: 28, height: 28, borderRadius: "50%", background: "#2563EB", opacity: .3, animation: `hsPulse 2s ease ${i * 0.6}s infinite` }} />
+      ))}
+      <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#2563EB", border: "3px solid #fff", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 14, boxShadow: "0 2px 8px rgba(37,99,235,.4)", position: "relative", zIndex: 2 }}>+</div>
+    </div>
+  );
+}
+
+function Tooltip({ hs, p, onNext, onBack, num, total }) {
+  const x = hs.x, y = hs.y;
+  const goLeft = x > 55;
+  const goUp = y > 60;
+  const goCenter = x >= 35 && x <= 65 && y <= 30;
+
+  let posStyle = {};
+  if (goCenter) posStyle = { left: "50%", transform: "translateX(-50%)", top: `calc(${y}% + 28px)` };
+  else if (goLeft && goUp) posStyle = { right: `calc(${100 - x}% + 20px)`, bottom: `calc(${100 - y}% + 20px)` };
+  else if (goLeft && !goUp) posStyle = { right: `calc(${100 - x}% + 20px)`, top: `calc(${y}% + 10px)` };
+  else if (!goLeft && goUp) posStyle = { left: `calc(${x}% + 20px)`, bottom: `calc(${100 - y}% + 20px)` };
+  else posStyle = { left: `calc(${x}% + 20px)`, top: `calc(${y}% + 10px)` };
+
+  return (
+    <div className="tt" style={{ position: "absolute", ...posStyle, width: 310, background: "#fff", borderRadius: 12, boxShadow: "0 12px 40px rgba(0,0,0,.18)", pointerEvents: "auto", zIndex: 95, overflow: "hidden" }}>
+      <div style={{ height: 3, background: "linear-gradient(90deg,#2563EB,#7C3AED)" }} />
+      <div style={{ padding: "14px 16px" }}>
+        <div style={{ fontSize: 10, color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: .5, marginBottom: 6 }}>Step {num} of {total}</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#111827", marginBottom: 7 }}>{ip(hs.title, p)}</div>
+        <div style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.65, marginBottom: 14 }}>{ip(hs.body, p)}</div>
+        <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
+          {Array.from({ length: total }).map((_, i) => (
+            <div key={i} style={{ height: 4, borderRadius: 2, background: i < num ? "#2563EB" : "#e5e7eb", width: i === num - 1 ? 18 : i < num ? 8 : 6, transition: "all .25s" }} />
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onBack} disabled={num === 1} style={{ flex: 1, background: num === 1 ? "#f3f4f6" : "#fff", color: num === 1 ? "#d1d5db" : "#374151", border: `1px solid ${num === 1 ? "#e5e7eb" : "#d1d5db"}`, borderRadius: 6, padding: "7px 0", fontSize: 12, fontWeight: 600, cursor: num === 1 ? "default" : "pointer", transition: "all .15s" }}>← Back</button>
+          <button onClick={onNext} style={{ flex: 2, background: "linear-gradient(90deg,#2563EB,#7C3AED)", color: "#fff", border: "none", borderRadius: 6, padding: "7px 0", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{hs.isLast ? "🎉 Finish" : "Next →"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+function HotspotOverlay({ hs, p, onNext, onBack, cur, total }) {
+  const [ttOpen, setTtOpen] = useState(true);
+  useEffect(() => { setTtOpen(true); }, [cur]);
+  return (
+    <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 80 }}>
+      {!ttOpen && <Hotspot x={hs.x} y={hs.y} onClick={() => setTtOpen(true)} />}
+      {ttOpen && <Tooltip hs={hs} p={p} onNext={onNext} onBack={onBack} num={cur + 1} total={total} />}
+    </div>
+  );
+}
+
+// ── BrandBar ──────────────────────────────────────────────────────────────────
+function BrandBar({ p, cur, total, step }) {
+  const pc = p?.primaryColor || "#0076BD";
+  const sc = p?.secondaryColor || "#7C3AED";
+  const chapters = [
+    { name: "Persona", screens: [0] }, { name: "Setup", screens: [1, 2] }, { name: "Design Review", screens: [3] },
+    { name: "Build", screens: [4, 5, 6] }, { name: "Audit", screens: [7, 8] }, { name: "Campaign", screens: [9, 10, 11, 12] }, { name: "Launch", screens: [13] }
+  ];
+  const ch = chapters.find(c => c.screens.includes(cur)) || chapters[0];
+  return (
+    <div style={{ height: 30, background: "#1e293b", display: "flex", alignItems: "center", padding: "0 16px", gap: 12, fontSize: 11, color: "#94a3b8", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+        <div style={{ width: 10, height: 10, borderRadius: 2, background: pc, flexShrink: 0 }} />
+        <div style={{ width: 10, height: 10, borderRadius: 2, background: sc, flexShrink: 0 }} />
+        <span style={{ color: "#e2e8f0", fontWeight: 700, marginLeft: 2 }}>{p?.companyName}</span>
+      </div>
+      <span style={{ color: "#334155" }}>·</span>
+      <span>{p?.personaName} · {p?.personaTitle}</span>
+      <span style={{ color: "#334155" }}>·</span>
+      <span style={{ color: "#60a5fa", fontWeight: 600 }}>{p?.campaignName}</span>
+      <div style={{ flex: 1 }} />
+      <div style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 20, padding: "2px 10px", fontSize: 10, color: "#60a5fa", fontWeight: 600 }}>
+        {ch.name} · {step || cur + 1}/{total}
+      </div>
+    </div>
+  );
+}
+
+// ── Agent Grid ────────────────────────────────────────────────────────────────
+const AGENTS = [
+  { id: "jacob", initials: "JA", color: "#2563EB", name: "Jacob", role: "Website Builder", desc: "Has the ability to build website on Acquia Source", resources: 18, tags: ["Slack", "Acquia Source"], docs: ["BRAND IDENTITY_ Pulse Wellness.docx", "Brand Guidelines-Halo.docx"], extra: "+14 more", chats: 26, selected: true },
+  { id: "sh", initials: "SH", color: "#E53E3E", name: "Shubham Automation", role: "Compliance and Governance Officer", desc: "Automated and manual tests on audit", resources: 1, tags: ["Acquia Source"], chats: 0 },
+  { id: "no", initials: "NO", color: "#718096", name: "NoBaseIns", role: "NoBaseIns", desc: "NoBaseIns", resources: 0, chats: 0, noRes: true },
+  { id: "na", initials: "NA", color: "#F59E0B", name: "Nadeem Test Persona", role: "Security Specialist", desc: "The SEO and security specialist", resources: 0, chats: 0 },
+  { id: "nb", initials: "NB", color: "#F59E0B", name: "Nadeem - Builder", role: "Website Builder", desc: "A person that builds high-quality websites", resources: 0, chats: 0 },
+  { id: "tn", initials: "T", color: "#0891B2", name: "TestNova Dev", role: "TestNova Dev", desc: "TestNova Dev", resources: 1, tags: ["Acquia Source"], chats: 0 },
+];
+
+function AgentCard({ agent }) {
+  return (
+    <div style={{ border: agent.selected ? "2px solid #DBEAFE" : "1px solid #e5e7eb", borderRadius: 10, padding: 14, background: "#fff", boxShadow: agent.selected ? "0 0 0 3px #DBEAFE" : "none", position: "relative" }}>
+      {agent.selected && <span style={{ position: "absolute", top: 10, right: 10, background: "#2563EB", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>✓</span>}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+        <div style={{ width: 38, height: 38, borderRadius: "50%", background: agent.color, color: "#fff", fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>{agent.initials}</div>
+        <div><div style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>{agent.name}</div><div style={{ fontSize: 11, color: "#6b7280" }}>{agent.role}</div></div>
+      </div>
+      <div style={{ fontSize: 11, color: "#374151", marginBottom: 8, lineHeight: 1.4 }}>{agent.desc}</div>
+      {agent.noRes ? (
+        <><div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>◫ 0 resources</div><div style={{ fontSize: 11, color: "#9ca3af" }}>No resources configured.</div></>
+      ) : (
+        <>
+          <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 6 }}>◫ {agent.resources} resource{agent.resources !== 1 ? "s" : ""}</div>
+          {agent.tags?.map(t => <span key={t} style={{ background: "#EFF6FF", color: "#2563EB", border: "1px solid #DBEAFE", borderRadius: 4, padding: "1px 7px", fontSize: 10, marginRight: 4, fontWeight: 500 }}>{t}</span>)}
+          {agent.docs?.map(d => <div key={d} style={{ fontSize: 10, color: "#374151", marginTop: 4 }}>{d}</div>)}
+          {agent.extra && <div style={{ fontSize: 10, color: "#6b7280" }}>{agent.extra}</div>}
+        </>
+      )}
+      <div style={{ fontSize: 11, color: "#6b7280", marginTop: 8 }}>💬 {agent.chats} chats</div>
+    </div>
+  );
+}
+
+// 100% verified working Unsplash IDs to use as safety fallbacks
+const FALLBACK_IDS = [
+  "1497366216548-37526070297c", "1522071820081-009f0129c71c", "1454165804606-c3d57bc86b40", "1515169061895-373a0e5b0260",
+  "1521737604893-d14cc237f11d", "1507679622140-615266c150fa", "1552664730-d307ca884978", "1531482615713-2defd0a5192b"
+];
+
+function AssetCard({ idx, damImages, keywords, primary, secondary, selected, fileName }) {
+  const [errCount, setErrCount] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+
+  const kw = keywords?.[idx % (keywords?.length || 1)] || "asset";
+  const cols = [primary, secondary, primary, secondary, secondary, primary, secondary, primary];
+  const col = cols[idx] || primary || "#0076BD";
+  const col2 = cols[(idx + 1) % cols.length] || secondary || "#7C3AED";
+  const name = fileName || `${kw.toLowerCase().replace(/ /g, "-")}-${2400 + idx * 137}.jpg`;
+
+  const currentSrc = damImages && damImages.length > 0 && errCount < damImages.length
+    ? damImages[(idx + errCount) % damImages.length]
+    : null;
+
+  // Always show a styled placeholder — never broken emoji
+  const showPlaceholder = !currentSrc || (currentSrc && !loaded && errCount >= damImages?.length);
+
+  return (
+    <div style={{ background: "#fff", border: selected ? `2px solid ${primary}` : "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden", cursor: "pointer" }}>
+      <div style={{ position: "relative", width: "100%", paddingBottom: "70%", overflow: "hidden" }}>
+        {/* Always render the gradient placeholder */}
+        <div style={{ position: "absolute", inset: 0, background: `linear-gradient(135deg, ${col} 0%, ${col2} 100%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.9)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", textAlign: "center", padding: "0 12px" }}>{kw}</div>
+          <div style={{ width: 32, height: 1, background: "rgba(255,255,255,0.4)" }} />
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", fontWeight: 500 }}>{name.split("-").slice(-1)[0]}</div>
+        </div>
+        {/* Real image on top — fades in if it loads */}
+        {currentSrc && (
+          <img
+            src={currentSrc}
+            alt={kw}
+            onLoad={() => setLoaded(true)}
+            onError={() => { setErrCount(c => c + 1); setLoaded(false); }}
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: loaded ? 1 : 0, transition: "opacity 0.4s" }}
+          />
+        )}
+        {/* Checkbox */}
+        <div style={{ position: "absolute", top: 8, right: 8, width: 20, height: 20, borderRadius: 4, background: selected ? primary : "rgba(255,255,255,0.88)", border: selected ? "none" : "1px solid rgba(0,0,0,0.15)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px rgba(0,0,0,.18)", zIndex: 2 }}>
+          {selected && <span style={{ color: "#fff", fontSize: 11, fontWeight: 700 }}>✓</span>}
+        </div>
+      </div>
+      <div style={{ padding: "8px 10px" }}>
+        <div style={{ fontSize: 11, color: "#374151", marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "#6b7280" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 3, cursor: "pointer" }}>
+            <input type="checkbox" checked={selected} readOnly style={{ accentColor: primary, width: 11, height: 11 }} /> Select
+          </label>
+          <span style={{ cursor: "pointer" }}>↗ Share</span>
+          <span style={{ cursor: "pointer" }}>↓ Download</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+// ── SCREENS ───────────────────────────────────────────────────────────────────
+
+function Screen1({ p }) {
+  const pc = p.primaryColor || "#0076BD";
+  const inks = initials(p.personaName);
+  const faviconUrl = `https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(p.url || "")}`;
+  const [faviconOk, setFaviconOk] = useState(true);
+  return (
+    <div style={{ flex: 1, background: "linear-gradient(135deg,#f8fafc 0%,#f1f5f9 100%)", display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}>
+      <div style={{ maxWidth: 840, width: "100%", display: "flex", gap: 48, alignItems: "flex-start" }}>
+        <div style={{ flex: 6 }} className="su">
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+            <div style={{ height: 2, width: 24, background: `linear-gradient(90deg,${pc},${p.secondaryColor || "#7C3AED"})`, borderRadius: 1 }} />
+            <span style={{ fontSize: 10, color: "#6b7280", textTransform: "uppercase", letterSpacing: 2, fontWeight: 600 }}>Today's story</span>
+          </div>
+          <h1 style={{ fontSize: 34, fontWeight: 800, color: "#111827", marginBottom: 6, lineHeight: 1.15 }}>{ip("Meet {who}", p)}</h1>
+          <div style={{ fontSize: 16, fontWeight: 600, color: pc, marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
+            {ip("{role}", p)}
+            <span style={{ fontSize: 13, color: "#6b7280", fontWeight: 400 }}>at</span>
+            {faviconOk && p.url && (
+              <img src={faviconUrl} width={18} height={18} style={{ borderRadius: 3, verticalAlign: "middle" }} onError={() => setFaviconOk(false)} alt="" />
+            )}
+            <span style={{ color: pc }}>{ip("{co}", p)}</span>
+          </div>
+          <p style={{ fontSize: 15, color: "#374151", lineHeight: 1.75, marginBottom: 22 }}>
+            {ip("{who} needs to launch a new site for {co} — and add the {ca} campaign page before the end of the week. She has Jacob, Acquia's AI Website Builder. Here's what happens next.", p)}
+          </p>
+          <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,.06)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <div style={{ width: 28, height: 28, borderRadius: 6, background: `${pc}15`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>⚡</div>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>The challenge</span>
+            </div>
+            <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.7, marginBottom: 10 }}>
+              {ip("{co} needs to establish a compelling digital presence in the {ind} space — fast. {who} must build a brand-ready site, add the {ca} campaign page, and publish it this week.", p)}
+            </div>
+            <div style={{ background: `${pc}08`, border: `1px solid ${pc}22`, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: pc, fontWeight: 500, lineHeight: 1.5 }}>
+              🔔 <strong>Urgent trigger:</strong> {p.urgentCampaignTrigger}
+            </div>
+          </div>
+        </div>
+        <div style={{ flex: 4 }} className="si">
+          <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 28, textAlign: "center", boxShadow: "0 4px 20px rgba(0,0,0,.08)" }}>
+            <div style={{ width: 80, height: 80, borderRadius: "50%", background: `linear-gradient(135deg,${pc},${p.secondaryColor || "#7C3AED"})`, color: "#fff", fontWeight: 800, fontSize: 28, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>{inks}</div>
+            <div style={{ fontWeight: 800, fontSize: 18, color: "#111827", marginBottom: 4 }}>{p.personaName}</div>
+            <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 14 }}>{p.personaTitle}</div>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: `${pc}10`, border: `1px solid ${pc}25`, borderRadius: 20, padding: "5px 14px" }}>
+              {faviconOk && p.url && (
+                <img src={faviconUrl} width={14} height={14} style={{ borderRadius: 2 }} onError={() => setFaviconOk(false)} alt="" />
+              )}
+              <span style={{ fontSize: 12, fontWeight: 600, color: pc }}>{p.companyName}</span>
+            </div>
+            <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 8 }}>
+              {[
+                { icon: "🏢", label: "Industry", val: p.industry },
+                { icon: "🎯", label: "Campaign", val: p.campaignName },
+              ].map(row => (
+                <div key={row.label} style={{ display: "flex", alignItems: "flex-start", gap: 8, textAlign: "left" }}>
+                  <span style={{ fontSize: 14, marginTop: 1 }}>{row.icon}</span>
+                  <div>
+                    <div style={{ fontSize: 10, color: "#9ca3af", textTransform: "uppercase", letterSpacing: .5, fontWeight: 600 }}>{row.label}</div>
+                    <div style={{ fontSize: 12, color: "#374151", fontWeight: 500 }}>{row.val}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Screen2({ p }) {
+  return (
+    <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <Sidebar aiOpen active="conversations" p={p} />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#f9fafb", overflow: "auto" }} className="scroll">
+        <TopBar crumbs={["AI", "Conversations"]} />
+        <div style={{ flex: 1, padding: "24px 40px" }}>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: "#111827", marginBottom: 4, textAlign: "center" }}>Choose Your Acquia Agent</h2>
+          <p style={{ fontSize: 13, color: "#6b7280", textAlign: "center", marginBottom: 16 }}>Select an agent to start your conversation.</p>
+          <div style={{ border: "2px dashed #d1d5db", borderRadius: 10, padding: 16, marginBottom: 16, display: "flex", alignItems: "center", gap: 16, position: "relative" }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, color: "#374151", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}><span>📍</span> New to Acquia AI?</div>
+              <button style={{ background: "#2563EB", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Learn how Acquia AI works</button>
+            </div>
+            <button style={{ position: "absolute", top: 8, right: 8, background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: 16 }}>✕</button>
+          </div>
+          <button style={{ background: "#2563EB", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 13, cursor: "pointer", fontWeight: 600, marginBottom: 20 }}>💬 Start Chat</button>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
+            {AGENTS.map(a => <AgentCard key={a.id} agent={a} />)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Screen3({ p }) {
+  return (
+    <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <Sidebar aiOpen active="new-chat" p={p} />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#fff", overflow: "hidden" }}>
+        <TopBar crumbs={["AI", "New chat"]} />
+        <ChatHeader />
+        <div style={{ flex: 1, padding: "20px 24px", overflow: "auto" }} className="scroll">
+          <AgentMsg text="Hi! What can I help you with today?" p={p} />
+        </div>
+        <ChatInput value={ip("Build the {co} site from our Figma design — WCAG AA compliant, optimised for AI answer engines.", p)} p={p} />
+      </div>
+    </div>
+  );
+}
+
+function Screen4({ p }) {
+  const pc = p.primaryColor || "#0076BD";
+  const [scanDone, setScanDone] = useState(false);
+  const [ann1, setAnn1] = useState(false);
+  const [ann2, setAnn2] = useState(false);
+  const [screenshotFailed, setScreenshotFailed] = useState(false);
+
+  // Try real screenshot via thum.io; falls back to BrandedMockup (uses p.imageUrls)
+  const screenshotUrl = p.url
+    ? `https://image.thum.io/get/width/1280/crop/800/noanimate/${encodeURIComponent(p.url)}`
+    : null;
+
+  useEffect(() => {
+    const t1 = setTimeout(() => setScanDone(true), 1200);
+    const t2 = setTimeout(() => setAnn1(true), 1800);
+    const t3 = setTimeout(() => setAnn2(true), 2400);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, []);
+
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#1a1a2e", overflow: "hidden" }}>
+      <div style={{ height: 48, background: "#2c2c2c", display: "flex", alignItems: "center", padding: "0 16px", gap: 24, flexShrink: 0, borderBottom: "1px solid #111", zIndex: 50 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 4, background: "#F24E1E", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: 16, boxShadow: "0 4px 6px rgba(0,0,0,0.3)" }}>F</div>
+        <div style={{ display: "flex", gap: 16, fontSize: 11, color: "#9ca3af", fontWeight: 500 }}>
+          <span style={{ color: "#fff" }}>Design</span><span>Prototype</span><span>Inspect</span>
+        </div>
+        <div style={{ flex: 1 }} />
+        <div style={{ background: "#383838", borderRadius: 6, padding: "4px 12px", fontSize: 11, color: "#d1d5db", border: "1px solid transparent" }}>
+          {ip("{co} — Brand Site Design.fig", p)}
+        </div>
+        <div style={{ flex: 1 }} />
+        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, background: "#383838", padding: "4px 8px", borderRadius: 4, fontSize: 11, color: "#d1d5db" }}>
+            <span style={{ fontWeight: "bold" }}>-</span><span>60%</span><span style={{ fontWeight: "bold" }}>+</span>
+          </div>
+          <button style={{ background: "#2563EB", color: "#fff", border: "none", borderRadius: 4, padding: "6px 12px", fontSize: 11, fontWeight: "bold", cursor: "pointer" }}>Share</button>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+        <div style={{ width: 240, background: "#2c2c2c", borderRight: "1px solid #333", padding: 16, display: "flex", flexDirection: "column", flexShrink: 0 }}>
+          <div style={{ fontSize: 9, color: "#999", fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Layers</div>
+          <div style={{ flex: 1, overflow: "auto" }} className="scroll">
+            <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#60a5fa", fontWeight: 500, fontSize: 11, marginBottom: 12 }}>
+              <span style={{ fontSize: 14 }}>◫</span> Desktop - Main
+            </div>
+            {[
+              { label: "Header_Navigation" },
+              { label: "Hero_Section" },
+              { label: "Content_Body" },
+              { label: "Footer_Global" },
+            ].map((l, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 20, fontSize: 11, color: "#9ca3af", marginBottom: 12 }}>
+                <span style={{ fontSize: 10 }}>#</span> {l.label}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "auto", background: "#1e1e1e", backgroundImage: "radial-gradient(#333 1px, transparent 1px)", backgroundSize: "32px 32px" }}>
+
+          <div style={{ width: "1280px", height: "800px", background: "white", boxShadow: "0 0 0 1px #333, 0 30px 60px rgba(0,0,0,0.5)", position: "relative", transform: "scale(0.6)", transformOrigin: "center", transition: "transform 0.2s ease-out" }}>
+
+            {/* Real website screenshot via image.thum.io — no iframe, no CSP issue */}
+            {screenshotUrl && !screenshotFailed ? (
+              <img
+                src={screenshotUrl}
+                alt={`${p.companyName} website`}
+                style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top", display: "block" }}
+                onError={() => setScreenshotFailed(true)}
+              />
+            ) : (
+              <BrandedMockup p={p} />
+            )}
+
+            <div style={{ position: "absolute", inset: 0, pointerEvents: "none", border: `4px solid ${pc}`, opacity: scanDone ? 1 : 0, transition: "opacity 0.3s", zIndex: 10 }}></div>
+
+            {!scanDone && (
+              <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 10 }}>
+                <div style={{ position: "absolute", left: 0, right: 0, height: 4, background: `linear-gradient(90deg,transparent,${pc},transparent)`, animation: "scanLine 1.2s ease forwards", top: 0, boxShadow: `0 0 15px ${pc}` }} />
+              </div>
+            )}
+          </div>
+
+          {ann1 && (
+            <div className="su" style={{ position: "absolute", top: "10%", right: "8%", background: "#fff", borderRadius: 8, padding: "8px 14px", boxShadow: "0 4px 20px rgba(0,0,0,.3)", fontSize: 11, fontWeight: 600, color: "#059669", display: "flex", alignItems: "center", gap: 6, border: "1px solid #D1FAE5" }}>
+              <span style={{ fontSize: 14 }}>✓</span> Brand tokens extracted
+            </div>
+          )}
+          {ann2 && (
+            <div className="su" style={{ position: "absolute", bottom: "8%", left: "8%", background: "#fff", borderRadius: 8, padding: "8px 14px", boxShadow: "0 4px 20px rgba(0,0,0,.3)", fontSize: 11, fontWeight: 600, color: "#2563EB", display: "flex", alignItems: "center", gap: 6, border: "1px solid #DBEAFE" }}>
+              <span style={{ fontSize: 14 }}>✓</span> Layout mapped — 4 components identified
+            </div>
+          )}
+        </div>
+
+        <div style={{ width: 240, background: "#2c2c2c", borderLeft: "1px solid #333", padding: 16, flexShrink: 0, display: "flex", flexDirection: "column", color: "#fff", fontSize: 11 }}>
+          <div style={{ fontSize: 9, color: "#999", fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1, marginBottom: 24 }}>Design</div>
+
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <div style={{ background: "#383838", padding: "6px 8px", flex: 1, borderRadius: 4, border: "1px solid #444", display: "flex", alignItems: "center" }}>
+              <span style={{ color: "#6b7280", marginRight: 8 }}>W</span> 1280
+            </div>
+            <div style={{ background: "#383838", padding: "6px 8px", flex: 1, borderRadius: 4, border: "1px solid #444", display: "flex", alignItems: "center" }}>
+              <span style={{ color: "#6b7280", marginRight: 8 }}>H</span> 800
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+            <div style={{ background: "#383838", padding: "6px 8px", flex: 1, borderRadius: 4, border: "1px solid #444", display: "flex", alignItems: "center" }}>
+              <span style={{ color: "#6b7280", marginRight: 8 }}>X</span> 450
+            </div>
+            <div style={{ background: "#383838", padding: "6px 8px", flex: 1, borderRadius: 4, border: "1px solid #444", display: "flex", alignItems: "center" }}>
+              <span style={{ color: "#6b7280", marginRight: 8 }}>Y</span> 210
+            </div>
+          </div>
+
+          <hr style={{ borderColor: "#444", marginBottom: 24 }} />
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 9, color: "#999", textTransform: "uppercase", fontWeight: "bold", letterSpacing: 1, display: "block", marginBottom: 8 }}>Fill</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#383838", padding: 8, borderRadius: 4, border: "1px solid #444" }}>
+              <div style={{ width: 16, height: 16, background: pc, border: "1px solid #666", borderRadius: 3 }} />
+              <span style={{ fontSize: 11, fontFamily: "monospace", textTransform: "uppercase", color: "#e5e7eb" }}>{pc}</span>
+              <span style={{ marginLeft: "auto", color: "#6b7280" }}>100%</span>
+            </div>
+          </div>
+
+          <div style={{ flex: 1 }} />
+          <button style={{ width: "100%", background: pc, color: cc(pc), border: "none", borderRadius: 8, padding: "10px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Confirm & Build →</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+function Screen5({ p }) {
+  return (
+    <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <Sidebar aiOpen active="conversations" p={p} />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#fff", overflow: "hidden" }}>
+        <TopBar crumbs={["AI", "Conversations"]} />
+        <ChatHeader />
+        <div style={{ flex: 1, padding: "20px 24px", overflow: "auto" }} className="scroll">
+          <AgentMsg p={p} text={ip("Here's my plan to build the {co} site using the Multi Brand Site Template as the foundation. I'll provision a fresh environment, build the full structure with content types, content, and Canvas pages — mirroring your Figma layout and {co} brand design.", p)} />
+          <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 12, padding: "14px 18px", marginBottom: 16, marginLeft: 42 }}>
+            <PlanStep n={1} title="Provision a new site" desc={ip('Create a new Acquia Source environment for "{co}" using the Multi Brand Site Template.', p)} p={p} />
+            <PlanStep n={2} title="Schema — Taxonomy & Content Types" desc={ip("Create vocabularies and content types (Brand, Product, Article) to support the {co} {ind} site structure.", p)} p={p} />
+            <PlanStep n={3} title={ip("Content — {co} Brands & Products", p)} desc={ip("Create {co} brand entries with logos, hero images, and brand colours. Create {ind} product/service entries in draft state.", p)} p={p} />
+            <PlanStep n={4} title="Run WCAG 2.1 Accessibility Audit" desc="Use Web Governance to audit all pages for WCAG AA compliance before publishing." p={p} />
+            <PlanStep n={5} title={ip("Assemble & Publish", p)} desc={ip("Build Canvas pages, set {co} homepage, update navigation, and publish live.", p)} p={p} />
+            <div style={{ marginTop: 12, fontSize: 13, color: "#374151" }}>Shall I proceed?</div>
+            <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 11, color: "#6b7280" }}>Skills identified:</span>
+              <SkillBadge label="canvas-page-builder" /><SkillBadge label="acquia-content-modeling" /><SkillBadge label="web-governance" />
+            </div>
+          </div>
+          <UserMsg text="2. No, build the new site." p={p} />
+        </div>
+        <ChatInput placeholder="Message Jacob…" p={p} />
+      </div>
+    </div>
+  );
+}
+
+function Screen6({ p }) {
+  return (
+    <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <Sidebar aiOpen active="conversations" p={p} />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#fff", overflow: "hidden" }}>
+        <TopBar crumbs={["AI", "Conversations"]} />
+        <ChatHeader />
+        <div style={{ flex: 1, padding: "20px 24px", overflow: "auto" }} className="scroll">
+          <UserMsg text={ip("Build the {co} site from our Figma design — WCAG AA compliant, optimised for AI answer engines.", p)} p={p} />
+          <ExecMsg step={1} total={5} pct={18} text={ip('Provision a new site — Creating the "{co}" environment. Configuring workspace and preview. Installing the Multi Brand Site Template.', p)} p={p} />
+          <ExecMsg step={2} total={5} pct={44} text={ip("Schema — Creating taxonomy vocabularies and content types for {co}'s {ind} site. Setting up Brand, Product, and Article content types.", p)} p={p} />
+          <ExecMsg step={3} total={5} pct={68} text={ip("Content — Creating {co} brand entries with logos, hero images, taglines, and brand colours. Creating {ind} product/service entries using assets from the {co} DAM.", p)} p={p} />
+        </div>
+        <ChatInput placeholder="Message Jacob…" p={p} />
+      </div>
+    </div>
+  );
+}
+
+function Screen7({ p }) {
+  const pc = p.primaryColor || "#0076BD";
+  const sc = p.secondaryColor || "#7C3AED";
+  const co = p.companyName || "Company";
+
+  // Use the first real image extracted from the prospect's site as their card thumbnail
+  const prospectThumb = (p.imageUrls || [])[0] || null;
+  const faviconUrl = p.url ? `https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(p.url)}` : null;
+
+  const siteCards = [
+    { name: ip("{co} Site", p), domain: `${co.toLowerCase().replace(/\s/g, "")}.acquia.site`, isProspect: true },
+    { name: "Valvoline Global", domain: "valvolineglobal.acquia.site", color: "#DC2626", color2: "#991B1B" },
+    { name: "Sean-POC-grainIng", domain: "sean-poc-graining.acquia.site", color: "#2563EB", color2: "#1d4ed8" },
+    { name: "DAM Media", domain: "dammedia.acquia.site", color: "#0891B2", color2: "#0e7490" },
+    { name: "Balzano Demo", domain: "balzanodemo.acquia.site", color: "#7C3AED", color2: "#6d28d9" },
+    { name: "Eudaimonia Univ.", domain: "eudaimonia.acquia.site", color: "#991B1B", color2: "#7f1d1d" },
+    { name: "Eudaimonia CPG", domain: "eudaimonia-cpg.acquia.site", color: "#7C3AED", color2: "#5b21b6" },
+    { name: "TestNova Dev", domain: "testnova.acquia.site", color: "#0891B2", color2: "#164e63" },
+  ];
+
+  return (
+    <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <Sidebar active="sites" p={p} />
+      <div style={{ flex: 1, background: "#fff", overflow: "auto", padding: 24 }} className="scroll">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <h2 style={{ fontSize: 22, fontWeight: 700, color: "#111827" }}>Sites</h2>
+          <div style={{ display: "flex", gap: 8 }}>
+            <select style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 10px", fontSize: 12 }}><option>Internal Acquia Source / AM-493...</option></select>
+            <button style={{ background: "none", border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 8px" }}>⊞</button>
+            <button style={{ background: "none", border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 8px" }}>☰</button>
+            <button style={{ background: "#2563EB", color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Create Site</button>
+          </div>
+        </div>
+        <input placeholder="Search by site label or domain" style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", width: 260, fontSize: 12, marginBottom: 20 }} />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
+          {siteCards.map((card, i) => (
+            <SiteCard key={i} card={card} pc={pc} sc={sc} co={co} prospectThumb={prospectThumb} faviconUrl={faviconUrl} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SiteCard({ card, pc, sc, co, prospectThumb, faviconUrl }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const showThumb = card.isProspect && prospectThumb && !imgFailed;
+
+  return (
+    <div style={{ border: card.isProspect ? `2px solid ${pc}` : "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden", boxShadow: card.isProspect ? `0 0 0 3px ${pc}22` : "none" }}>
+      <div style={{ height: 140, position: "relative", overflow: "hidden", background: card.isProspect ? `linear-gradient(135deg,${pc},${sc})` : `linear-gradient(135deg,${card.color},${card.color2 || card.color}88)` }}>
+        {showThumb ? (
+          <img
+            src={prospectThumb}
+            alt={co}
+            onError={() => setImgFailed(true)}
+            style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top" }}
+          />
+        ) : null}
+        {/* Overlay for prospect card */}
+        {card.isProspect && (
+          <div style={{ position: "absolute", inset: 0, background: showThumb ? "linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.5) 100%)" : "transparent", display: "flex", flexDirection: "column", alignItems: showThumb ? "flex-start" : "center", justifyContent: showThumb ? "flex-end" : "center", padding: 10 }}>
+            <div style={{ position: "absolute", top: 8, right: 8, background: "#059669", color: "#fff", fontSize: 9, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>NEW ✓ Live</div>
+            {!showThumb && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                {faviconUrl && <img src={faviconUrl} alt="" width={28} height={28} style={{ borderRadius: 6, background: "#fff", padding: 2 }} onError={() => {}} />}
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#fff" }}>{co[0]}</div>
+              </div>
+            )}
+          </div>
+        )}
+        {/* Non-prospect fallback */}
+        {!card.isProspect && (
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ width: 40, height: 40, borderRadius: 8, background: "rgba(255,255,255,.25)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: "#fff", fontWeight: 800 }}>{card.name[0]}</div>
+          </div>
+        )}
+      </div>
+      <div style={{ padding: "10px 12px" }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "#2563EB", marginBottom: 2 }}>{card.name}</div>
+        <div style={{ fontSize: 11, color: "#2563EB", marginBottom: 6 }}>{card.domain} ↗</div>
+        <span style={{ background: "#ECFDF5", color: "#059669", fontSize: 10, fontWeight: 600, borderRadius: 4, padding: "2px 8px" }}>Public</span>
+        <div style={{ marginTop: 8 }}>
+          <button style={{ border: "1px solid #e5e7eb", background: "#fff", borderRadius: 6, padding: "5px 10px", fontSize: 11, cursor: "pointer" }}>✎ Edit Site</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Screen8({ p }) {
+  const scores = [
+    { label: "Accessibility", score: 96, color: "#10B981", pill: "WCAG AA" },
+    { label: "SEO", score: 91, color: "#3B82F6" },
+    { label: "Performance", score: 88, color: "#F59E0B" },
+    { label: "Best Practices", score: 94, color: "#8B5CF6" },
+  ];
+  const checks = [
+    { ok: true, label: "Color contrast ratio", desc: "All elements pass WCAG AA 4.5:1 ratio" },
+    { ok: true, label: "Alt text on images", desc: "100% of images have descriptive alt text" },
+    { ok: true, label: "Keyboard navigation", desc: "Full keyboard navigability confirmed" },
+    { ok: true, label: "ARIA labels", desc: "All interactive elements properly labelled" },
+    { ok: false, label: "Focus visible", desc: "2 minor focus indicator improvements suggested" },
+  ];
+  return (
+    <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <Sidebar aiOpen active="conversations" p={p} />
+      <div style={{ flex: 1, background: "#f9fafb", overflow: "auto", padding: 24 }} className="scroll">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+          <div>
+            <h2 style={{ fontSize: 19, fontWeight: 700, color: "#111827" }}>{ip("{co} — Accessibility Report", p)}</h2>
+            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{new Date().toLocaleDateString()}</div>
+          </div>
+          <div style={{ background: "linear-gradient(135deg,#059669,#10B981)", borderRadius: 8, padding: "8px 14px", color: "#fff", fontWeight: 700, fontSize: 12, textAlign: "center", lineHeight: 1.6 }}>
+            WCAG 2.1<br />AA<br />COMPLIANT ✓
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
+          {scores.map(s => (
+            <div key={s.label} style={{ background: "#fff", border: `1px solid #e5e7eb`, borderTop: `3px solid ${s.color}`, borderRadius: 8, padding: 14, textAlign: "center" }}>
+              <div style={{ fontSize: 32, fontWeight: 800, color: s.color }}>{s.score}</div>
+              <div style={{ fontSize: 12, color: "#374151", fontWeight: 600 }}>{s.label}</div>
+              {s.pill && <span style={{ background: "#ECFDF5", color: "#059669", fontSize: 10, fontWeight: 700, borderRadius: 4, padding: "2px 8px", marginTop: 4, display: "inline-block" }}>{s.pill}</span>}
+            </div>
+          ))}
+        </div>
+        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden" }}>
+          {checks.map((c, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 16px", borderBottom: i < checks.length - 1 ? "1px solid #f3f4f6" : "none" }}>
+              <span style={{ fontSize: 18, marginTop: 1 }}>{c.ok ? "✅" : "⚠️"}</span>
+              <div><div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>{c.label}</div><div style={{ fontSize: 12, color: "#6b7280" }}>{c.desc}</div></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Screen9({ p }) {
+  return (
+    <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <Sidebar aiOpen active="conversations" p={p} />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#fff", overflow: "hidden" }}>
+        <TopBar crumbs={["AI", "Conversations"]} />
+        <ChatHeader />
+        <div style={{ flex: 1, padding: "20px 24px", overflow: "auto" }} className="scroll">
+          <UserMsg text={ip("Build the {co} site from our Figma design — WCAG AA compliant, optimised for AI answer engines.", p)} p={p} />
+          <AgentMsg p={p}
+            thinking={ip("Site provisioned, {ind} content created, Canvas pages assembled, accessibility audit passed, DNS updated. The {co} site is live.", p)}
+            text={ip("✓ The {co} site is live. WCAG AA compliant, AEO-structured, and built without writing a single line of code. The site is now indexed and ready to be cited by AI answer engines.", p)}
+          />
+        </div>
+        <ChatInput placeholder="Message Jacob…" p={p} />
+      </div>
+    </div>
+  );
+}
+
+function Screen10({ p }) {
+  return (
+    <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <Sidebar aiOpen active="conversations" p={p} />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#fff", overflow: "hidden", position: "relative" }}>
+        <TopBar crumbs={["AI", "Conversations"]} />
+        <ChatHeader />
+        <div style={{ flex: 1, padding: "20px 24px", overflow: "auto" }} className="scroll">
+          <UserMsg text={ip("Build the {co} site from our Figma design — WCAG AA compliant, optimised for AI answer engines.", p)} p={p} />
+          <AgentMsg p={p}
+            thinking={ip("Site provisioned, {ind} content created, Canvas pages assembled, accessibility audit passed, DNS updated. The {co} site is live.", p)}
+            text={ip("✓ The {co} site is live. WCAG AA compliant, AEO-structured, and built without writing a single line of code.", p)}
+          />
+          <UserMsg text={ip("Add a {ca} page to the {co} site.", p)} p={p} />
+        </div>
+        <ChatInput value={ip("Add a {ca} page to the {co} site.", p)} p={p} />
+        <div className="ni" style={{ position: "absolute", top: 70, right: 18, background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: 10, padding: "10px 14px", maxWidth: 300, boxShadow: "0 4px 16px rgba(0,0,0,.12)", zIndex: 100 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <span style={{ fontSize: 20 }}>🔔</span>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#92400E", marginBottom: 3 }}>Launch date moved up!</div>
+              <div style={{ fontSize: 11, color: "#78350F", lineHeight: 1.5 }}>
+                {ip(p.urgentCampaignTrigger + " — the {ca} launch needs to happen today.", p)}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Screen11({ p }) {
+  return (
+    <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <Sidebar aiOpen active="conversations" p={p} />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#fff", overflow: "hidden" }}>
+        <TopBar crumbs={["AI", "Conversations"]} />
+        <ChatHeader />
+        <div style={{ flex: 1, padding: "20px 24px", overflow: "auto" }} className="scroll">
+          <AgentMsg p={p} text={ip("I can see you already have the {co} site. I'll add the {ca} page directly to it. Here's my plan:", p)} />
+          <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 12, padding: "14px 18px", marginBottom: 16, marginLeft: 42 }}>
+            <PlanStep n={1} title={ip("Search {co} DAM for {ca} assets", p)} desc={ip("Identify and validate brand-aligned {ind} images for the {ca} campaign against {co} brand standards.", p)} p={p} />
+            <PlanStep n={2} title={ip("Build the {ca} page", p)} desc={ip("Use the existing {co} design system — same Canvas layout, components, and brand tokens — to build the {ca} campaign page.", p)} p={p} />
+            <PlanStep n={3} title="Create AEO-ready content cluster" desc={ip("Use the Writing Assistant to structure {ind} content so {ca} is cited in AI search results by customers searching for {ind} solutions.", p)} p={p} />
+            <PlanStep n={4} title="Add to site & update navigation" desc={ip("Add the {ca} page to the {co} site and update the navigation menu automatically.", p)} p={p} />
+            <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 11, color: "#6b7280" }}>Skills identified:</span>
+              <SkillBadge label="canvas-page-builder" /><SkillBadge label="conductor-writing-assistant" /><SkillBadge label="acquia-dam" />
+            </div>
+          </div>
+          <UserMsg text={ip("Add a {ca} page to the {co} site.", p)} p={p} />
+        </div>
+        <ChatInput placeholder="Message Jacob…" p={p} />
+      </div>
+    </div>
+  );
+}
+
+function Screen12({ p, damImages }) {
+  const pc = p.primaryColor || "#0076BD";
+  const sc = p.secondaryColor || "#7C3AED";
+  const kws = p.assetKeywords || ["product", "brand", "campaign", "digital"];
+
+  const fileNames = Array.from({ length: 8 }).map((_, i) => {
+    const kw = kws[i % kws.length] || "asset";
+    return `${kw.toLowerCase().replace(/ /g, "-")}-${2400 + i * 137}.jpg`;
+  });
+
+  return (
+    <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <Sidebar dam active="assets" p={p} />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#fff", overflow: "hidden" }}>
+
+        {/* Top nav bar */}
+        <div style={{ height: 44, borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", padding: "0 20px", background: "#fff", flexShrink: 0 }}>
+          <div style={{ display: "flex", gap: 4 }}>
+            {["Categories", "Collections", "Activities"].map(b => (
+              <button key={b} style={{ border: "1px solid #d1d5db", background: "#fff", borderRadius: 6, padding: "5px 13px", fontSize: 12, cursor: "pointer", color: "#374151", marginRight: 4 }}>
+                {b} <span style={{ fontSize: 10, color: "#9ca3af" }}>›</span>
+              </button>
+            ))}
+          </div>
+          <div style={{ flex: 1 }} />
+          <input placeholder="Search assets..." style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "5px 12px", fontSize: 12, color: "#374151", width: 180, outline: "none" }} />
+        </div>
+
+        {/* Scrollable content */}
+        <div style={{ flex: 1, overflow: "auto", padding: "16px 20px" }} className="scroll">
+
+          <h2 style={{ fontSize: 16, fontWeight: 700, color: "#111827", marginBottom: 12 }}>
+            Assets <span style={{ fontSize: 13, fontWeight: 400, color: "#6b7280" }}>(284 results)</span>
+          </h2>
+
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#374151", cursor: "pointer" }}>
+                <input type="checkbox" readOnly style={{ width: 13, height: 13 }} /> Select all
+              </label>
+              <span style={{ fontSize: 12, color: "#6b7280" }}>viewing 1–16 of 284</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <select style={{ border: "1px solid #d1d5db", borderRadius: 6, padding: "4px 10px", fontSize: 12, color: "#374151", background: "#fff" }}>
+                <option>Relevance</option><option>Newest</option><option>Oldest</option>
+              </select>
+              <select style={{ border: "1px solid #d1d5db", borderRadius: 6, padding: "4px 10px", fontSize: 12, color: "#374151", background: "#fff" }}>
+                <option>200 per page</option><option>50 per page</option><option>100 per page</option>
+              </select>
+              <button style={{ border: "1px solid #d1d5db", background: "#fff", borderRadius: 6, padding: "4px 12px", fontSize: 12, color: "#374151", cursor: "pointer" }}>Filter</button>
+            </div>
+          </div>
+
+          {/* 4-column grid — using AssetCard so useState per card is legal */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
+            {Array.from({ length: 8 }).map((_, i) => (
+              <AssetCard
+                key={i}
+                idx={i}
+                damImages={damImages}
+                keywords={kws}
+                primary={pc}
+                secondary={sc}
+                selected={i < 4}
+                fileName={fileNames[i]}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Screen13({ p }) {
+  const titles = p.contentClusterTitles || ["Article 1", "Article 2", "Article 3", "Article 4"];
+  return (
+    <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <Sidebar aiOpen active="conversations" p={p} />
+      <div style={{ flex: 1, background: "#f9fafb", overflow: "auto", padding: 24 }} className="scroll">
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: "#111827", marginBottom: 16 }}>Writing Assistant — Content Cluster</h2>
+        <div style={{ background: "linear-gradient(135deg,#EFF6FF,#F5F3FF)", border: "1px solid #DBEAFE", borderRadius: 10, padding: 16, marginBottom: 20 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#1E40AF", marginBottom: 6 }}>✍️ AEO-Ready Content Cluster Generated</div>
+          <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.6 }}>
+            {ip("The Writing Assistant has created a content cluster for {ca} — structured so {co} is cited by ChatGPT, Perplexity, and every AI answer engine your {ind} customers use.", p)}
+          </div>
+        </div>
+        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden", marginBottom: 16 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+                {["Title", "Type", "Status"].map(h => (
+                  <th key={h} style={{ textAlign: "left", padding: "10px 14px", fontSize: 12, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: .5 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr style={{ background: "#EFF6FF", borderBottom: "1px solid #e5e7eb" }}>
+                <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 700, color: "#111827" }}>{ip("{ca} — {co} Campaign Page", p)}</td>
+                <td style={{ padding: "10px 14px", fontSize: 12, color: "#374151" }}>Page</td>
+                <td style={{ padding: "10px 14px" }}><span style={{ background: "#ECFDF5", color: "#059669", fontSize: 11, fontWeight: 600, borderRadius: 4, padding: "2px 8px" }}>Draft</span></td>
+              </tr>
+              {titles.map((t, i) => (
+                <tr key={i} style={{ borderBottom: i < titles.length - 1 ? "1px solid #f3f4f6" : "none" }}>
+                  <td style={{ padding: "10px 14px", fontSize: 13, color: "#111827" }}>{t}</td>
+                  <td style={{ padding: "10px 14px", fontSize: 12, color: "#374151" }}>Article</td>
+                  <td style={{ padding: "10px 14px" }}><span style={{ background: "#FFFBEB", color: "#92400E", fontSize: 11, fontWeight: 600, borderRadius: 4, padding: "2px 8px" }}>Draft</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button style={{ background: "#2563EB", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>✓ Approve & Publish Cluster</button>
+          <button style={{ background: "#fff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>Edit</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── SCREEN 14 ─────────────────────────────────────────────────────────────────
+function Screen14({ p, campHtml }) {
+  const pc = p.primaryColor || "#0076BD";
+  const sc = p.secondaryColor || "#7C3AED";
+  const [view, setView] = useState("campaign");
+
+  const isDark = (() => {
+    try { const r=parseInt(pc.slice(1,3),16),g=parseInt(pc.slice(3,5),16),b=parseInt(pc.slice(5,7),16); return .299*r+.587*g+.114*b<60; } catch { return false; }
+  })();
+
+  // Build a brand-faithful campaign page using ONLY CSS — no external images needed
+  const buildCampaignPage = () => {
+    const co = p.companyName || "Company";
+    const ca = p.campaignName || "New Campaign";
+    const cd = p.campaignDescription || "Our most exciting initiative yet.";
+    const ind = p.industry || "technology";
+    const prods = p.products || ["Product One", "Product Two", "Product Three"];
+    const navs = (p.navLinks || ["Home","Products","About","Contact"]).slice(0,5);
+    const titles = p.contentClusterTitles || [];
+    const bg = isDark ? "#000" : "#fff";
+    const text = isDark ? "#fff" : "#111";
+    const navBg = isDark ? "#111" : pc;
+    const heroGrad = isDark
+      ? `linear-gradient(135deg, #111 0%, #1a1a1a 100%)`
+      : `linear-gradient(135deg, ${pc} 0%, ${sc} 100%)`;
+    const accent = isDark ? (sc !== "#7C3AED" ? sc : "#f5a623") : pc;
+    const btnStyle = isDark
+      ? `background:#fff;color:#000;border:none;padding:16px 40px;font-size:14px;font-weight:700;cursor:pointer;letter-spacing:.1em;text-transform:uppercase;`
+      : `background:#fff;color:${pc};border:none;border-radius:8px;padding:16px 36px;font-size:15px;font-weight:800;cursor:pointer;`;
+    const cardBg = isDark ? "#111" : "#f9fafb";
+    const cardBorder = isDark ? "#222" : "#e5e7eb";
+    const cardText = isDark ? "#fff" : "#111";
+    const cardSub = isDark ? "#888" : "#6b7280";
+
+    // Generate CSS-only hero pattern (no images needed)
+    const heroPattern = isDark
+      ? `background: #000; background-image: radial-gradient(circle at 20% 50%, rgba(255,255,255,0.03) 0%, transparent 60%), radial-gradient(circle at 80% 20%, ${accent}22 0%, transparent 50%);`
+      : `background: ${heroGrad};`;
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${ca} | ${co}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif;background:${bg};color:${text};}
+nav{background:${navBg};position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 48px;height:${isDark?'60px':'64px'};${isDark?'border-bottom:1px solid #222;':''}}
+.logo{font-size:${isDark?'18':'20'}px;font-weight:900;color:#fff;letter-spacing:${isDark?'.05em':'-.3px'};text-transform:${isDark?'uppercase':'none'};}
+.nav-links{display:flex;align-items:center;gap:${isDark?'32':'28'}px;}
+.nav-link{font-size:13px;color:rgba(255,255,255,.75);cursor:pointer;font-weight:500;text-decoration:none;}
+.nav-link.active{color:#fff;font-weight:700;${isDark?'text-decoration:underline;text-underline-offset:4px;':'border-bottom:2px solid rgba(255,255,255,.7);padding-bottom:2px;'}}
+.nav-cta{${isDark?`background:#fff;color:#000;padding:10px 24px;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.05em;text-transform:uppercase;border:none;`:`background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer;`}}
+.hero{${heroPattern}min-height:${isDark?'90vh':'560px'};display:flex;align-items:${isDark?'flex-end':'center'};padding:${isDark?'0 64px 80px':'80px 48px'};position:relative;overflow:hidden;}
+.hero-eyebrow{font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:${accent};margin-bottom:16px;}
+.hero h1{font-size:${isDark?'80':'56'}px;font-weight:900;color:#fff;line-height:1.0;letter-spacing:${isDark?'-.02em':'-.5px'};margin-bottom:${isDark?'32':'20'}px;text-transform:${isDark?'uppercase':'none'};max-width:700px;}
+.hero p{font-size:${isDark?'16':'19'}px;color:rgba(255,255,255,.8);line-height:1.6;margin-bottom:36px;max-width:540px;}
+.hero-btns{display:flex;gap:14px;flex-wrap:wrap;}
+.btn-primary{${btnStyle}}
+.btn-ghost{background:transparent;color:#fff;border:${isDark?'2px solid #fff':'1px solid rgba(255,255,255,.6)'};${isDark?'':'border-radius:8px;'}padding:${isDark?'14px 40px':'15px 36px'};font-size:${isDark?'13':'15'}px;font-weight:700;cursor:pointer;letter-spacing:${isDark?'.1em':'0'};text-transform:${isDark?'uppercase':'none'};}
+/* Decorative geometric shapes for Nike-style visual interest */
+.hero-shape{position:absolute;${isDark?`right:-100px;top:-100px;width:500px;height:500px;border-radius:50%;background:radial-gradient(circle,${accent}15 0%,transparent 70%);`:`right:0;top:0;bottom:0;width:40%;background:rgba(255,255,255,.08);clip-path:polygon(20% 0%,100% 0%,100% 100%,0% 100%);`}}
+.section{padding:80px 48px;max-width:1200px;margin:0 auto;}
+.section-label{font-size:11px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:${accent};margin-bottom:16px;}
+.section h2{font-size:${isDark?'48':'36'}px;font-weight:900;color:${text};margin-bottom:${isDark?'48':'40'}px;text-transform:${isDark?'uppercase':'none'};letter-spacing:${isDark?'-.02em':'-.01em'};}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:${isDark?'2px':'24px'};}
+.card{background:${cardBg};${isDark?'':'border:1px solid '+cardBorder+';border-radius:12px;'}padding:${isDark?'32px':'28px'};${isDark?'border-top:2px solid '+accent+';':''}}
+.card-num{font-size:11px;font-weight:700;color:${accent};letter-spacing:.1em;text-transform:uppercase;margin-bottom:12px;}
+.card h3{font-size:${isDark?'18':'17'}px;font-weight:800;color:${cardText};margin-bottom:10px;text-transform:${isDark?'uppercase':'none'};letter-spacing:${isDark?'.05em':'0'};}
+.card p{font-size:13px;color:${cardSub};line-height:1.6;}
+.divider{height:${isDark?'80px':'0'};background:${isDark?'#111':'transparent'};display:flex;align-items:center;padding:${isDark?'0 48px':'0'};${isDark?'border-top:1px solid #1a1a1a;border-bottom:1px solid #1a1a1a;':''}}
+.stats-section{background:${isDark?'#111':'#f9fafb'};${isDark?'border-top:1px solid #1a1a1a;border-bottom:1px solid #1a1a1a;':''}padding:${isDark?'64px':'60px'} 48px;}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;max-width:900px;margin:0 auto;text-align:center;}
+.stat-num{font-size:${isDark?'52':'40'}px;font-weight:900;color:${isDark?'#fff':pc};letter-spacing:-.02em;text-transform:${isDark?'uppercase':'none'};}
+.stat-label{font-size:13px;color:${isDark?'#666':cardSub};margin-top:8px;font-weight:${isDark?'700':'500'};letter-spacing:${isDark?'.05em':'0'};text-transform:${isDark?'uppercase':'none'};}
+.cta-section{background:${isDark?'#111':'linear-gradient(135deg,'+pc+','+sc+')'};${isDark?'border-top:1px solid #222;':''}padding:${isDark?'100px':'80px'} 48px;text-align:center;}
+.cta-section h2{font-size:${isDark?'56':'40'}px;font-weight:900;color:#fff;margin-bottom:16px;text-transform:${isDark?'uppercase':'none'};}
+.cta-section p{font-size:17px;color:rgba(255,255,255,.8);margin-bottom:40px;}
+.cta-form{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;}
+.cta-input{background:${isDark?'#1a1a1a':'#fff'};border:${isDark?'1px solid #333':'none'};border-radius:${isDark?'2':'8'}px;padding:16px 24px;font-size:14px;width:300px;outline:none;color:${isDark?'#fff':'#111'};}
+.cta-input::placeholder{color:#666;}
+.cta-btn{${isDark?`background:#fff;color:#000;border:none;padding:16px 36px;font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;`:`background:#fff;color:${pc};border:none;border-radius:8px;padding:16px 32px;font-size:14px;font-weight:800;cursor:pointer;`}}
+footer{background:${isDark?'#111':'#111827'};color:#fff;padding:48px;${isDark?'border-top:1px solid #1a1a1a;':''}}
+.footer-top{display:grid;grid-template-columns:2fr 1fr 1fr;gap:40px;margin-bottom:40px;}
+.footer-brand{font-size:18px;font-weight:900;margin-bottom:12px;text-transform:${isDark?'uppercase':'none'};}
+.footer-desc{font-size:13px;color:#666;line-height:1.6;}
+.footer-col h4{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#666;margin-bottom:14px;}
+.footer-link{display:block;font-size:13px;color:#999;margin-bottom:8px;cursor:pointer;}
+.footer-bottom{border-top:1px solid #222;padding-top:20px;display:flex;justify-content:space-between;font-size:12px;color:#666;}
+</style>
+</head>
+<body>
+<nav>
+  <div class="logo">${co}</div>
+  <div class="nav-links">
+    ${navs.map(n=>`<span class="nav-link${n===ca?' active':''}">${n}</span>`).join('')}
+    <span class="nav-link active">${ca}</span>
+  </div>
+  <button class="nav-cta">${isDark?'SHOP NOW':'Get Started'}</button>
+</nav>
+
+<div class="hero">
+  <div class="hero-shape"></div>
+  <div style="position:relative;z-index:1;">
+    <div class="hero-eyebrow">${ind} · ${co}</div>
+    <h1>${ca}</h1>
+    <p>${cd}</p>
+    <div class="hero-btns">
+      <button class="btn-primary">${isDark?'SHOP NOW →':'Get Started'}</button>
+      <button class="btn-ghost">${isDark?'EXPLORE':'Learn More'}</button>
+    </div>
+  </div>
+</div>
+
+<div style="background:${isDark?'#000':'#fff'};padding:80px 48px;">
+  <div style="max-width:1200px;margin:0 auto;">
+    <div class="section-label">Featured ${isDark?'Collection':'Solutions'}</div>
+    <h2>${isDark?'BUILT FOR PERFORMANCE':'Core Products & Services'}</h2>
+    <div class="cards">
+      ${prods.slice(0,3).map((prod,i)=>`
+      <div class="card">
+        <div class="card-num">0${i+1}</div>
+        <h3>${prod}</h3>
+        <p>${isDark?`Engineered for athletes. Built for the future of ${ind}.`:`Purpose-built for modern ${ind} teams — delivering measurable impact from day one.`}</p>
+        <div style="margin-top:20px;font-size:12px;font-weight:700;color:${accent};letter-spacing:.08em;cursor:pointer;text-transform:${isDark?'uppercase':'none'}">${isDark?'SHOP NOW →':'Explore →'}</div>
+      </div>`).join('')}
+    </div>
+  </div>
+</div>
+
+<div class="stats-section">
+  <div style="text-align:center;margin-bottom:48px;">
+    <div class="section-label">By the numbers</div>
+    <h2 style="font-size:${isDark?'40':'32'}px;font-weight:900;color:${text};text-transform:${isDark?'uppercase':'none'};">${isDark?'THE IMPACT':'Trusted by Leaders'}</h2>
+  </div>
+  <div class="stats">
+    <div><div class="stat-num">500+</div><div class="stat-label">Global ${isDark?'Athletes':'Clients'}</div></div>
+    <div><div class="stat-num">98%</div><div class="stat-label">${isDark?'Performance':'Satisfaction'}</div></div>
+    <div><div class="stat-num">3.2×</div><div class="stat-label">Faster Results</div></div>
+    <div><div class="stat-num">24/7</div><div class="stat-label">Support</div></div>
+  </div>
+</div>
+
+${titles.length ? `
+<div style="background:${isDark?'#000':'#f8fafc'};padding:80px 48px;">
+  <div style="max-width:900px;margin:0 auto;">
+    <div class="section-label">Editorial</div>
+    <h2>${isDark?'STORIES':'Latest Insights'}</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:${isDark?'2px':'16px'};">
+      ${titles.map((t,i)=>`
+      <div style="background:${isDark?'#111':'#fff'};${isDark?'border-top:1px solid #1a1a1a;':'border:1px solid #e5e7eb;border-radius:10px;'}padding:24px;cursor:pointer;">
+        <div style="font-size:10px;font-weight:700;color:${accent};letter-spacing:.12em;text-transform:uppercase;margin-bottom:10px;">${['Article','Guide','Report','Story'][i%4]}</div>
+        <div style="font-size:${isDark?'15':'14'}px;font-weight:700;color:${text};line-height:1.4;text-transform:${isDark?'uppercase':'none'};letter-spacing:${isDark?'.02em':'0'}">${t}</div>
+      </div>`).join('')}
+    </div>
+  </div>
+</div>` : ''}
+
+<div class="cta-section">
+  <h2>${isDark?`JOIN THE ${ca.toUpperCase()}`:`Ready to experience ${co}?`}</h2>
+  <p>${isDark?`Be part of something bigger. Register now.`:cd}</p>
+  <div class="cta-form">
+    <input class="cta-input" type="email" placeholder="Enter your email"/>
+    <button class="cta-btn">${isDark?'JOIN NOW →':'Get Access →'}</button>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-top">
+    <div>
+      <div class="footer-brand">${co}</div>
+      <div class="footer-desc">${p.businessDescription || `The leading platform for ${ind}.`}</div>
+    </div>
+    <div>
+      <h4>${isDark?'Shop':'Product'}</h4>
+      ${prods.map(pr=>`<span class="footer-link">${pr}</span>`).join('')}
+    </div>
+    <div>
+      <h4>Company</h4>
+      <span class="footer-link">About</span>
+      <span class="footer-link">Careers</span>
+      <span class="footer-link">Press</span>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2026 ${co}. All rights reserved.</span>
+    <span>${ca} · ${ind}</span>
+  </div>
+</footer>
+</body>
+</html>`;
+  };
+
+  const fallbackHTML = buildCampaignPage();
+
+  return (
+    <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <Sidebar active="sites" p={p} />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#f9fafb", overflow: "hidden" }}>
+        <div style={{ height: 48, background: "#fff", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", padding: "0 16px", gap: 10, flexShrink: 0 }}>
+          <span style={{ fontSize: 16 }}>🔒</span>
+          <div style={{ flex: 1, background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 20, padding: "4px 14px", fontSize: 12, color: "#374151", maxWidth: 440 }}>{p.url || "https://yoursite.acquia.site"}</div>
+          <div style={{ display: "flex", gap: 6, marginLeft: 8 }}>
+            <button onClick={() => setView("campaign")} style={{ fontSize: 11, fontWeight: 600, borderRadius: 6, padding: "5px 12px", border: "none", cursor: "pointer", background: view === "campaign" ? pc : "#f3f4f6", color: view === "campaign" ? cc(pc) : "#374151" }}>
+              ✓ {ip("{ca} Page", p)}
+            </button>
+            <button onClick={() => setView("original")} style={{ fontSize: 11, fontWeight: 600, borderRadius: 6, padding: "5px 12px", cursor: "pointer", background: "#f3f4f6", color: "#374151", border: "1px solid #e5e7eb" }}>
+              Original Site
+            </button>
+          </div>
+          <div style={{ background: "#ECFDF5", color: "#059669", border: "1px solid #D1FAE5", borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 600, flexShrink: 0 }}>
+            ✓ {ip("{ca} Page Added", p)}
+          </div>
+        </div>
+        <div style={{ flex: 1, overflow: "hidden" }}>
+          {view === "campaign" ? (
+            <iframe
+              srcDoc={campHtml || fallbackHTML}
+              sandbox="allow-scripts allow-same-origin"
+              style={{ width: "100%", height: "100%", border: "none" }}
+              title="campaign page"
+            />
+          ) : (
+            <iframe src={p.url} style={{ width: "100%", height: "100%", border: "none" }} title="original site" />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Hotspot Definitions ───────────────────────────────────────────────────────
+const HOTSPOTS = [
+  { x: 50, y: 88, title: "This is {who}'s story", body: "{who} is the {role} at {co}. She needs to build and launch a site — without writing a single line of code." },
+  { x: 28, y: 58, title: "Meet Jacob — your AI Website Builder", body: "Jacob is {co}'s dedicated website builder agent — with access to brand guidelines, Slack, and Acquia Source. {who} selects Jacob to begin." },
+  { x: 84, y: 90, title: "{who} describes her goal", body: "No tickets. No briefs. {who} types her goal in plain language — build the {co} site from Figma, WCAG AA, optimised for AI answer engines." },
+  { x: 78, y: 85, title: "Jacob reviews the {co} Figma design", body: "Before making any plan, Jacob analyses the {co} Figma file — mapping layout, brand tokens, components, and navigation. He shares a live preview before proceeding." },
+  { x: 55, y: 48, title: "A reviewable plan — before any action", body: "Jacob returns a step-by-step plan for {co}'s site. {who} approves it — including the WCAG audit — before Jacob takes any action." },
+  { x: 52, y: 62, title: "Jacob executes — step by step", body: "Jacob works through the plan transparently. {who} sees every step in real time. No engineering ticket. No waiting." },
+  { x: 13, y: 38, title: "{co} site is live", body: "The {co} site now appears in Acquia Source. Built from Figma, WCAG AA passed, AEO-optimised. Zero code written by {who}." },
+  { x: 82, y: 16, title: "WCAG AA — Passed ✓", body: "{co}'s site is accessible and AEO-optimised — ready to be cited by ChatGPT, Perplexity, and every AI answer engine." },
+  { x: 50, y: 52, title: "Site live — zero lines of code", body: "{co} is live. WCAG AA compliant, AEO-structured — built from a Figma design without a single line of code written by {who}." },
+  { x: 68, y: 22, title: "Urgent: {ca} launch moved up", body: (p) => (p?.urgentCampaignTrigger || "") + ". {who} types the next request without leaving the chat." },
+  { x: 52, y: 45, title: "Plan: Add {ca} to {co}'s site", body: "Jacob spots the existing {co} site and proposes a focused 4-step plan — {ind}-specific assets, campaign page, AEO content cluster, navigation update." },
+  { x: 19, y: 48, title: "Brand-aligned {ind} assets surfaced", body: "Jacob searches the {co} DAM and surfaces 4 on-brand {ind} assets validated against {co} brand guidelines. {who} confirms the selection." },
+  { x: 50, y: 55, title: "AEO-ready {ind} content cluster", body: "The Writing Assistant creates a content cluster for {ca} — articles structured so AI answer engines surface {co} when {ind} customers search for solutions." },
+  { x: 35, y: 6, title: "{ca} is live 🎉", body: "{co}'s site now includes the {ca} page — on-brand, {ind}-specific, AEO-ready. {who} went from Figma to live without writing a single line of code.", isLast: true },
+];
+
+// ── Demo Shell ────────────────────────────────────────────────────────────────
+function DemoShell({ p, campHtml, damImages, selectedScreens, onRestart }) {
+  // screenList = ordered list of screen indices to show. null means all 14.
+  const screenList = selectedScreens || [0,1,2,3,4,5,6,7,8,9,10,11,12,13];
+  const [idx, setIdx] = useState(0); // index into screenList
+  const [done, setDone] = useState(false);
+  const [key, setKey] = useState(0);
+
+  const cur = screenList[idx]; // actual screen number (0-13)
+  const total = screenList.length;
+
+  const next = useCallback(() => {
+    if (idx >= screenList.length - 1) { setDone(true); return; }
+    setTimeout(() => { setIdx(i => i + 1); setKey(k => k + 1); }, 80);
+  }, [idx, screenList]);
+
+  const prev = useCallback(() => {
+    if (idx <= 0) return;
+    setIdx(i => i - 1); setKey(k => k + 1);
+  }, [idx]);
+
+  useEffect(() => {
+    const handler = e => {
+      if (e.key === "ArrowRight") next();
+      if (e.key === "ArrowLeft") prev();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [idx, next, prev]);
+
+  // Build a label showing which module this screen belongs to
+  const moduleTag = (() => {
+    if (!selectedScreens) return null;
+    const mod = MODULES.find(m => m.screens.includes(cur));
+    return mod ? { label: mod.title, color: mod.color, bg: mod.bg, emoji: mod.emoji } : null;
+  })();
+
+  if (done) {
+    return (
+      <div style={{ height: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg,#0076BD,#7C3AED)", color: "#fff", gap: 20, textAlign: "center", padding: 24 }}>
+        <div style={{ fontSize: 60 }}>🎉</div>
+        <div style={{ fontSize: 28, fontWeight: 800 }}>{ip("{co} is live", p)}</div>
+        <div style={{ fontSize: 15, opacity: .85, maxWidth: 520, lineHeight: 1.7 }}>
+          {ip("{who} launched the {co} site and the {ca} campaign page — without writing a single line of code.", p)}
+        </div>
+        {selectedScreens && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", maxWidth: 480 }}>
+            {MODULES.filter(m => selectedScreens.some(s => m.screens.includes(s))).map(m => (
+              <span key={m.id} style={{ background: "rgba(255,255,255,.2)", borderRadius: 20, padding: "4px 14px", fontSize: 12, fontWeight: 600 }}>{m.emoji} {m.title} ✓</span>
+            ))}
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
+          <button onClick={onRestart} style={{ background: "#fff", color: "#2563EB", border: "none", borderRadius: 8, padding: "12px 24px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>← Try with Another URL</button>
+          <button onClick={() => { setDone(false); setIdx(0); setKey(k => k + 1); }} style={{ background: "rgba(255,255,255,.2)", color: "#fff", border: "1px solid rgba(255,255,255,.4)", borderRadius: 8, padding: "12px 24px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>↺ Replay Demo</button>
+        </div>
+        <div style={{ fontSize: 12, opacity: .6, marginTop: 8 }}>💡 Press ← → to navigate at any time</div>
+      </div>
+    );
+  }
+
+  const hs = { ...HOTSPOTS[cur] };
+  if (typeof hs.body === "function") hs.body = hs.body(p);
+
+  return (
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", position: "relative", fontFamily: "'DM Sans',sans-serif" }}>
+      {/* Progress bar */}
+      <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: 3, background: "#e5e7eb", zIndex: 200 }}>
+        <div style={{ height: "100%", width: `${(idx + 1) / total * 100}%`, background: "linear-gradient(90deg,#2563EB,#7C3AED)", transition: "width .3s" }} />
+      </div>
+      <BrandBar p={p} cur={cur} total={total} step={idx + 1} />
+
+      {/* Module highlight tag */}
+      {moduleTag && (
+        <div style={{ position: "fixed", top: 36, right: 16, zIndex: 200, background: moduleTag.bg, border: `1px solid ${moduleTag.color}44`, borderRadius: 20, padding: "4px 12px", fontSize: 11, fontWeight: 700, color: moduleTag.color, boxShadow: "0 2px 8px rgba(0,0,0,.1)" }}>
+          {moduleTag.emoji} {moduleTag.label}
+        </div>
+      )}
+
+      <div key={key} className="sc" style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative", paddingTop: 3 }}>
+        {cur === 0 && <Screen1 p={p} />}
+        {cur === 1 && <Screen2 p={p} />}
+        {cur === 2 && <Screen3 p={p} />}
+        {cur === 3 && <Screen4 p={p} />}
+        {cur === 4 && <Screen5 p={p} />}
+        {cur === 5 && <Screen6 p={p} />}
+        {cur === 6 && <Screen7 p={p} />}
+        {cur === 7 && <Screen8 p={p} />}
+        {cur === 8 && <Screen9 p={p} />}
+        {cur === 9 && <Screen10 p={p} />}
+        {cur === 10 && <Screen11 p={p} />}
+        {cur === 11 && <Screen12 p={p} damImages={damImages} />}
+        {cur === 12 && <Screen13 p={p} />}
+        {cur === 13 && <Screen14 p={p} campHtml={campHtml} />}
+        <HotspotOverlay hs={hs} p={p} onNext={next} onBack={prev} cur={idx} total={total} />
+      </div>
+      <div style={{ position: "fixed", bottom: 16, right: 16, display: "flex", gap: 8, alignItems: "center", zIndex: 200 }}>
+        {idx > 0 && (
+          <button onClick={prev} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 20, padding: "4px 10px", fontSize: 11, color: "#6b7280", cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,.1)" }}>← Prev</button>
+        )}
+        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 20, padding: "4px 12px", fontSize: 11, color: "#6b7280", boxShadow: "0 2px 8px rgba(0,0,0,.1)" }}>
+          {idx + 1} / {total}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Welcome Screen ────────────────────────────────────────────────────────────
+const SAMPLE_COMPANIES = [
+  { label: "Nike", url: "https://www.nike.com", color: "#111" },
+  { label: "Salesforce", url: "https://www.salesforce.com", color: "#00A1E0" },
+  { label: "HubSpot", url: "https://www.hubspot.com", color: "#FF7A59" },
+  { label: "Shopify", url: "https://www.shopify.com", color: "#96BF48" },
+];
+
+function WelcomeScreen({ onStart }) {
+  const [tab, setTab] = useState("ai");
+  const [url, setUrl] = useState("");
+  const [urlError, setUrlError] = useState("");
+
+
+  const [mf, setMf] = useState({ companyName: "", industry: "", primaryColor: "#0076BD", secondaryColor: "#7C3AED", campaignName: "", campaignDescription: "" });
+
+  const handleAI = (overrideUrl) => {
+    let u = (overrideUrl || url).trim();
+    if (!u) { setUrlError("Please enter a URL."); return; }
+    if (!/^https?:\/\//i.test(u)) u = "https://" + u;
+    try { new URL(u); } catch { setUrlError("Please enter a valid URL."); return; }
+    setUrlError("");
+    onStart({ type: "ai", url: u });
+  };
+
+  const handleManual = () => {
+    if (!mf.companyName || !mf.campaignName) return;
+    onStart({ type: "manual", data: mf });
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#0076BD 0%,#2563EB 50%,#7C3AED 100%)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ maxWidth: 540, width: "100%", background: "#fff", borderRadius: 18, overflow: "hidden", boxShadow: "0 32px 80px rgba(0,0,0,.3)" }}>
+        <div style={{ background: "linear-gradient(135deg,#0076BD,#2563EB)", padding: "22px 26px", display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ width: 42, height: 42, borderRadius: 12, background: "rgba(255,255,255,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>⚡</div>
+          <div>
+            <div style={{ color: "#fff", fontWeight: 800, fontSize: 18 }}>Acquia AI Interactive Demo</div>
+            <div style={{ color: "rgba(255,255,255,.75)", fontSize: 12, marginTop: 2 }}>Personalized to your prospect's brand in seconds</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", borderBottom: "1px solid #e5e7eb" }}>
+          {[{ id: "ai", label: "✨ AI-Powered" }, { id: "manual", label: "⚙️ Manual Setup" }].map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, padding: "13px 0", border: "none", background: "none", fontSize: 13, fontWeight: tab === t.id ? 700 : 400, color: tab === t.id ? "#2563EB" : "#6b7280", borderBottom: tab === t.id ? "2px solid #2563EB" : "2px solid transparent", cursor: "pointer" }}>{t.label}</button>
+          ))}
+        </div>
+        <div style={{ padding: "24px 26px" }}>
+          {tab === "ai" ? (
+            <>
+              <p style={{ fontSize: 13, color: "#374151", lineHeight: 1.65, marginBottom: 16 }}>
+                Enter your prospect's website URL. The AI searches the web, extracts their brand, generates a realistic persona at their company, and personalizes every screen.
+              </p>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: .5, marginBottom: 8 }}>Quick start — click a sample company</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {SAMPLE_COMPANIES.map(sc => (
+                    <button key={sc.label} onClick={() => { setUrl(sc.url); setTimeout(() => handleAI(sc.url), 50); }} style={{ background: `${sc.color}10`, border: `1px solid ${sc.color}30`, borderRadius: 20, padding: "4px 12px", fontSize: 12, fontWeight: 600, color: sc.color || "#374151", cursor: "pointer" }}>
+                      {sc.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Prospect's Website URL</label>
+              <input
+                value={url} onChange={e => { setUrl(e.target.value); setUrlError(""); }}
+                onKeyDown={e => e.key === "Enter" && handleAI()}
+                placeholder="https://prospect.com"
+                style={{ width: "100%", border: `1px solid ${urlError ? "#EF4444" : "#e5e7eb"}`, borderRadius: 8, padding: "11px 14px", fontSize: 13, outline: "none", marginBottom: urlError ? 4 : 14 }}
+              />
+              {urlError && <div style={{ color: "#EF4444", fontSize: 11, marginBottom: 10 }}>{urlError}</div>}
+              <button onClick={() => handleAI()} style={{ width: "100%", background: "linear-gradient(135deg,#0076BD,#2563EB)", color: "#fff", border: "none", borderRadius: 8, padding: "13px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Analyze & Start Demo →</button>
+            </>
+          ) : (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                {[{ k: "companyName", l: "Company Name *", ph: "Acquia Inc" }, { k: "industry", l: "Industry", ph: "SaaS / Web CMS" }].map(f => (
+                  <div key={f.k}>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 4 }}>{f.l}</label>
+                    <input value={mf[f.k]} onChange={e => setMf(m => ({ ...m, [f.k]: e.target.value }))} placeholder={f.ph} style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 8, padding: "8px 12px", fontSize: 13 }} />
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                {[{ k: "primaryColor", l: "Primary Color" }, { k: "secondaryColor", l: "Secondary Color" }].map(f => (
+                  <div key={f.k}>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 4 }}>{f.l}</label>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <input type="color" value={mf[f.k]} onChange={e => setMf(m => ({ ...m, [f.k]: e.target.value }))} style={{ width: 36, height: 34, border: "1px solid #e5e7eb", borderRadius: 6, cursor: "pointer" }} />
+                      <input value={mf[f.k]} onChange={e => setMf(m => ({ ...m, [f.k]: e.target.value }))} style={{ flex: 1, border: "1px solid #e5e7eb", borderRadius: 8, padding: "8px 10px", fontSize: 12, fontFamily: "monospace" }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {[{ k: "campaignName", l: "Campaign Name *", ph: "Summer Launch 2026" }, { k: "campaignDescription", l: "Campaign Description", ph: "Introducing our next-gen product line." }].map(f => (
+                <div key={f.k} style={{ marginBottom: 12 }}>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 4 }}>{f.l}</label>
+                  <input value={mf[f.k]} onChange={e => setMf(m => ({ ...m, [f.k]: e.target.value }))} placeholder={f.ph} style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 8, padding: "8px 12px", fontSize: 13 }} />
+                </div>
+              ))}
+              <button onClick={handleManual} style={{ width: "100%", background: "#111827", color: "#fff", border: "none", borderRadius: 8, padding: "12px 0", fontSize: 14, fontWeight: 700, cursor: "pointer", marginTop: 4 }}>Start Demo →</button>
+            </>
+          )}
+        </div>
+        <div style={{ textAlign: "center", fontSize: 11, color: "#9ca3af", padding: "0 26px 18px" }}>Prospect data is not stored or shared</div>
+      </div>
+    </div>
+  );
+}
+
+// ── Analyzing Screen ──────────────────────────────────────────────────────────
+function AnalyzingScreen({ url }) {
+  const msgs = [
+    `Searching ${url || "site"}...`,
+    "Extracting brand identity...",
+    "Building persona...",
+    "Generating campaign content...",
+    "Personalizing all 14 screens..."
+  ];
+  const [msgIdx, setMsgIdx] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setMsgIdx(i => Math.min(i + 1, msgs.length - 1)), 1200);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#0076BD 0%,#2563EB 50%,#7C3AED 100%)", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 24, color: "#fff", padding: 24 }}>
+      <div style={{ width: 56, height: 56, border: "4px solid rgba(255,255,255,.25)", borderTop: "4px solid #fff", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>{msgs[msgIdx]}</div>
+        <div style={{ fontSize: 12, opacity: .65, maxWidth: 320 }}>{url}</div>
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        {msgs.map((_, i) => (
+          <div key={i} style={{ width: i <= msgIdx ? 16 : 8, height: 8, borderRadius: 4, background: i <= msgIdx ? "#fff" : "rgba(255,255,255,.3)", transition: "all .3s" }} />
+        ))}
+      </div>
+      <div style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 12, padding: "14px 20px", maxWidth: 360, textAlign: "center" }}>
+        <div style={{ fontSize: 12, opacity: .9, lineHeight: 1.6 }}>
+          ✨ AI is analyzing the company's website, extracting brand colors, creating a realistic persona, and generating industry-specific content…
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Module Definitions (maps to screen indices) ───────────────────────────────
+const MODULES = [
+  { id: "wcag",      icon: "♿", emoji: "🛡️", title: "WCAG Compliance",        color: "#059669", bg: "#ECFDF5", border: "#D1FAE5", screens: [7, 8],     desc: "See Jacob automatically audit and ensure WCAG 2.1 AA accessibility across every page before publishing." },
+  { id: "brand",     icon: "🎨", emoji: "🎨", title: "Brand Consistency",       color: "#7C3AED", bg: "#F5F3FF", border: "#DDD6FE", screens: [3, 4, 6],  desc: "Watch Jacob extract brand tokens from Figma and apply them across the entire site — zero manual work." },
+  { id: "aeo",       icon: "🤖", emoji: "🤖", title: "AEO-Optimized Content",   color: "#2563EB", bg: "#EFF6FF", border: "#DBEAFE", screens: [12, 13],   desc: "See the Writing Assistant build content clusters cited by ChatGPT, Perplexity, and AI search engines." },
+  { id: "campaign",  icon: "🚀", emoji: "🚀", title: "Campaign Builder",         color: "#DC2626", bg: "#FEF2F2", border: "#FECACA", screens: [9, 10, 13], desc: "Watch Jacob build a fully personalised campaign page for {co} in minutes — no code, no dev tickets." },
+  { id: "dam",       icon: "🖼️", emoji: "🖼️", title: "DAM & Asset Management", color: "#D97706", bg: "#FFFBEB", border: "#FDE68A", screens: [11],       desc: "Explore how Jacob surfaces brand-aligned {ind} assets from the {co} DAM — validated against brand guidelines." },
+];
+
+// ── Launchpad Screen ──────────────────────────────────────────────────────────
+function Launchpad({ p, onStart }) {
+  const [sel, setSel] = useState(new Set());
+  const pc = p?.primaryColor || "#0076BD";
+  const sc = p?.secondaryColor || "#7C3AED";
+
+  const toggle = id => setSel(s => {
+    const n = new Set(s);
+    n.has(id) ? n.delete(id) : n.add(id);
+    return n;
+  });
+
+  const selModules = MODULES.filter(m => sel.has(m.id));
+  const allScreens = sel.size === 0
+    ? null // show all screens when nothing selected
+    : [...new Set([0, 1, 2, 3, 4, 5, 6, ...selModules.flatMap(m => m.screens), 13])].sort((a, b) => a - b);
+
+  const faviconUrl = p?.url ? `https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(p.url)}` : null;
+
+  return (
+    <div style={{ width: "100vw", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: `linear-gradient(135deg, ${pc} 0%, #2563EB 50%, ${sc} 100%)`, fontFamily: "'DM Sans',sans-serif", padding: 24 }}>
+      <div style={{ background: "#fff", borderRadius: 20, maxWidth: 700, width: "100%", boxShadow: "0 32px 80px rgba(0,0,0,0.28)", overflow: "hidden" }}>
+
+        {/* Header */}
+        <div style={{ background: `linear-gradient(135deg, ${pc}, ${sc})`, padding: "28px 32px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 10 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 10, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>⚡</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 19, fontWeight: 800, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
+                {faviconUrl && <img src={faviconUrl} width={20} height={20} style={{ borderRadius: 4, background: "#fff", padding: 1 }} alt="" onError={e => e.target.style.display = "none"} />}
+                {p?.companyName ? `${p.companyName} — ` : ""}Acquia AI Demo
+              </div>
+              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.78)", marginTop: 2 }}>
+                {p?.personaName && <span style={{ fontWeight: 600 }}>{p.personaName}</span>}
+                {p?.personaTitle && <span style={{ opacity: 0.8 }}> · {p.personaTitle}</span>}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {p?.industry && <span style={{ background: "rgba(255,255,255,0.18)", borderRadius: 20, padding: "4px 14px", fontSize: 12, color: "#fff", fontWeight: 500 }}>{p.industry}</span>}
+            {p?.campaignName && <span style={{ background: "rgba(255,255,255,0.12)", borderRadius: 20, padding: "4px 14px", fontSize: 12, color: "rgba(255,255,255,0.9)", fontWeight: 500 }}>🎯 {p.campaignName}</span>}
+          </div>
+        </div>
+
+        <div style={{ padding: "28px 32px" }}>
+          <div style={{ marginBottom: 22 }}>
+            <h2 style={{ fontSize: 17, fontWeight: 800, color: "#111827", marginBottom: 6 }}>What would you like to see?</h2>
+            <p style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.65 }}>
+              Select the capabilities that matter most to <strong>{p?.companyName || "your prospect"}</strong>. 
+              The demo will focus on those areas as {p?.personaName || "your persona"} builds the site with Jacob.
+            </p>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 24 }}>
+            {MODULES.map(mod => {
+              const on = sel.has(mod.id);
+              const desc = mod.desc
+                .replace("{co}", p?.companyName || "the company")
+                .replace("{ind}", p?.industry || "industry");
+              return (
+                <div key={mod.id} onClick={() => toggle(mod.id)}
+                  style={{ border: on ? `2px solid ${mod.color}` : "1px solid #e5e7eb", borderRadius: 14, padding: "16px", background: on ? mod.bg : "#fff", cursor: "pointer", position: "relative", boxShadow: on ? `0 0 0 3px ${mod.color}18` : "none", transition: "all 0.15s" }}>
+                  {on && (
+                    <div style={{ position: "absolute", top: 12, right: 12, width: 22, height: 22, borderRadius: "50%", background: mod.color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>✓</div>
+                  )}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                    <span style={{ width: 36, height: 36, borderRadius: 9, background: on ? mod.border : "#f3f4f6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19 }}>{mod.icon}</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: on ? mod.color : "#111827" }}>{mod.title}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: on ? mod.color : "#6b7280", lineHeight: 1.55, opacity: on ? 0.9 : 0.8 }}>{desc}</div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Preview of what's included */}
+          {sel.size > 0 && (
+            <div style={{ background: "#f8fafc", border: "1px solid #e5e7eb", borderRadius: 12, padding: "14px 18px", marginBottom: 20 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 8 }}>
+                ✨ Your personalised demo will cover {allScreens?.length || 14} screens:
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {selModules.map(m => (
+                  <span key={m.id} style={{ background: m.bg, border: `1px solid ${m.border}`, color: m.color, borderRadius: 20, padding: "3px 11px", fontSize: 11, fontWeight: 600 }}>
+                    {m.emoji} {m.title}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <button onClick={() => onStart(sel.size > 0 ? allScreens : null)}
+            style={{ width: "100%", padding: "15px", borderRadius: 10, border: "none", background: `linear-gradient(90deg, ${pc}, ${sc})`, color: "#fff", fontSize: 15, fontWeight: 700, cursor: "pointer", boxShadow: `0 4px 20px ${pc}44`, transition: "opacity 0.15s" }}>
+            {sel.size > 0 ? `Start Demo — ${sel.size} area${sel.size !== 1 ? "s" : ""} selected →` : "Start Full Demo →"}
+          </button>
+          <div style={{ textAlign: "center", fontSize: 11, color: "#9ca3af", marginTop: 12 }}>
+            {sel.size === 0 ? "No selection = full 14-screen demo" : `Skipping ${14 - (allScreens?.length || 14)} screens not relevant to your selection`}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── App Root ──────────────────────────────────────────────────────────────────
+export default function App() {
+  const [phase, setPhase] = useState("welcome");
+  const [prospect, setProspect] = useState(null);
+  const [campHtml, setCampHtml] = useState(null);
+  const [damImages, setDamImages] = useState([]);
+  const [analyzingUrl, setAnalyzingUrl] = useState("");
+  const [selectedScreens, setSelectedScreens] = useState(null); // null = all screens
+
+  const handleStart = async ({ type, url, data }) => {
+    if (type === "manual") {
+      const p = { ...fallbackProspect("https://example.com"), ...data };
+      setProspect(p); setPhase("launchpad");
+      setDamImages(buildKeywordImages(p));
+      setTimeout(() => {
+        genCampaignHTML(p).then(html => html && setCampHtml(html)).catch(() => { });
+      }, 3000);
+      return;
+    }
+    setAnalyzingUrl(url); setPhase("analyzing");
+    let p;
+    try {
+      p = await analyzeProspect(url);
+    } catch (e) {
+      console.error("Analysis failed:", e);
+      p = fallbackProspect(url);
+    }
+    setProspect(p);
+    const siteImages = p.imageUrls || [];
+    setDamImages(siteImages.length >= 4 ? siteImages : buildKeywordImages(p));
+    setTimeout(() => {
+      genCampaignHTML(p).then(html => html && setCampHtml(html)).catch(() => { });
+    }, 4000);
+    setPhase("launchpad");
+  };
+
+  const handleRestart = () => {
+    setPhase("welcome"); setProspect(null); setCampHtml(null); setDamImages([]); setAnalyzingUrl(""); setSelectedScreens(null);
+  };
+
+  return (
+    <>
+      <style>{STYLE}</style>
+      {phase === "welcome" && <WelcomeScreen onStart={handleStart} />}
+      {phase === "analyzing" && <AnalyzingScreen url={analyzingUrl} />}
+      {phase === "launchpad" && prospect && (
+        <Launchpad p={prospect} onStart={screens => { setSelectedScreens(screens); setPhase("demo"); }} />
+      )}
+      {phase === "demo" && prospect && (
+        <DemoShell p={prospect} campHtml={campHtml} damImages={damImages} selectedScreens={selectedScreens} onRestart={handleRestart} />
+      )}
+    </>
+  );
+}
