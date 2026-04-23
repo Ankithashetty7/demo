@@ -234,39 +234,56 @@ async function fetchWebsiteSignals(url) {
 async function analyzeProspect(url) {
   const endpoint = import.meta.env.VITE_API_ENDPOINT;
 
+  // Screenshot via thum.io — renders full JS, gives Claude the ACTUAL visual page
+  const screenshotUrl = `https://image.thum.io/get/width/1280/crop/900/noanimate/${encodeURIComponent(url)}`;
+
+  // HTML head fetch (parallel) — useful for og:image, meta desc on static/SSR sites
   const { signals: pageSignals, imageUrls, rawMeta } = await fetchWebsiteSignals(url);
 
-  const contextBlock = pageSignals
-    ? `\n\nREAL WEBSITE CONTENT EXTRACTED FROM THE PAGE (use this as your PRIMARY source of truth):\n---\n${pageSignals}\n---\n`
+  const supplemental = pageSignals
+    ? `\n\nSupplementary HTML metadata extracted from the page source:\n${pageSignals}`
     : "";
 
-  const userPrompt = `Analyze this company website: ${url}${contextBlock}
-Return ONLY this JSON object with no other text:
+  const textPrompt = `You are looking at a real screenshot of ${url}. Analyze what you can SEE in the image — the actual rendered homepage.
+
+Return ONLY this JSON (no markdown, no backticks):
 {
-  "companyName": "exact company name from the website",
-  "personaName": "realistic full name for a marketing/digital leader at this company",
-  "personaTitle": "realistic job title e.g. Head of Digital Experience, VP Marketing",
-  "primaryColor": "#hex of their dominant brand color",
-  "secondaryColor": "#hex of their secondary brand color",
-  "industry": "2-4 word description of what they ACTUALLY do (e.g. 'cycling events platform', 'specialty coffee', 'athletic footwear')",
-  "products": ["their 3 main actual products or services"],
-  "campaignName": "name of a specific, relevant campaign this company would run right now",
-  "campaignDescription": "one sentence describing what this campaign is about",
-  "urgentCampaignTrigger": "a realistic urgent business reason why this campaign launch date was moved up",
-  "assetKeywords": ["4 SPECIFIC visual keywords matching their actual content — e.g. for a cycling events site: 'cyclist racing', 'bike event crowd', 'cycling podium', 'velodrome track'"],
-  "contentClusterTitles": ["SEO article title 1 specific to their campaign","SEO article title 2","SEO article title 3","SEO article title 4"],
-  "businessDescription": "one sentence describing what this company actually does",
-  "siteDescription": "one sentence describing the visual style of their website",
-  "heroHeadline": "the main headline or tagline from their actual homepage",
-  "navLinks": ["up to 5 real navigation items from their site"],
-  "heroSubtext": "the supporting text under their main hero headline"
-}`;
+  "companyName": "company name visible in the nav/logo",
+  "personaName": "realistic full name for a marketing leader at this company",
+  "personaTitle": "realistic job title e.g. VP of Marketing, Head of Digital",
+  "primaryColor": "#hex of the dominant brand color you see on screen",
+  "secondaryColor": "#hex of the secondary/accent color you see on screen",
+  "industry": "2-4 word description of what they do based on what you see",
+  "products": ["3 actual products or services visible or inferable from the page"],
+  "campaignName": "name of a timely campaign this company would run right now",
+  "campaignDescription": "one sentence describing the campaign",
+  "urgentCampaignTrigger": "a realistic urgent business reason this campaign was accelerated",
+  "assetKeywords": ["4 specific visual photography keywords matching their content — e.g. 'athlete sprinting track', 'running shoe closeup', 'crowd marathon finish', 'sport performance gear'"],
+  "contentClusterTitles": ["SEO title 1","SEO title 2","SEO title 3","SEO title 4"],
+  "businessDescription": "one sentence on what this company does",
+  "siteDescription": "describe the visual design: dark/light, typography weight, imagery style",
+  "heroHeadline": "the exact main headline text you can read on the page",
+  "navLinks": ["exact nav link labels visible in the header"],
+  "heroSubtext": "the subheadline or body text beneath the main headline"
+}${supplemental}`;
 
   const body = JSON.stringify({
     model: import.meta.env.VITE_MODEL,
     max_tokens: 1500,
-    system: "You analyze company websites and return ONLY a valid JSON object. No markdown. No backticks. No explanation. Just the raw JSON.",
-    messages: [{ role: "user", content: userPrompt }]
+    system: "You analyze website screenshots and return ONLY a valid JSON object. No markdown. No backticks. No explanation. Base your analysis on what you can visually see in the screenshot.",
+    messages: [{
+      role: "user",
+      content: [
+        {
+          type: "image",
+          source: { type: "url", url: screenshotUrl }
+        },
+        {
+          type: "text",
+          text: textPrompt
+        }
+      ]
+    }]
   });
 
   const res = await fetch(endpoint, {
@@ -284,7 +301,18 @@ Return ONLY this JSON object with no other text:
   const text = data.content?.[0]?.text || "";
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) throw new Error("No JSON from Anthropic");
-  return { ...JSON.parse(match[0]), url, imageUrls, rawMeta: rawMeta || {} };
+
+  // Merge: og:image from HTML head is the highest-res brand image available
+  const ogImage = rawMeta?.ogImage || null;
+  const allImages = ogImage ? [ogImage, ...imageUrls.filter(u => u !== ogImage)] : imageUrls;
+
+  return {
+    ...JSON.parse(match[0]),
+    url,
+    screenshotUrl,          // real rendered screenshot — used in Screen 4 + campaign hero
+    imageUrls: allImages,   // og:image first, then any other extracted images
+    rawMeta: rawMeta || {}
+  };
 }
 
 async function genCampaignHTML(p) {
@@ -293,9 +321,10 @@ async function genCampaignHTML(p) {
   const siteImages = (p.imageUrls || []).slice(0, 6);
   const fallbackImgs = buildKeywordImages(p);
   const imgs = siteImages.length >= 4 ? siteImages : [...siteImages, ...fallbackImgs].slice(0, 6);
-  // OG image is the highest-quality brand image — prioritise it for the hero
+  // Priority: og:image (highest-res brand asset) → scraped site image → screenshot → picsum
   const ogImage = p.rawMeta?.ogImage;
-  const heroUrl  = ogImage || imgs[0] || `https://picsum.photos/seed/${encodeURIComponent(p.companyName||'co')}0/1400/900`;
+  const heroUrl  = ogImage || imgs[0] || p.screenshotUrl
+    || `https://picsum.photos/seed/${encodeURIComponent(p.companyName||'co')}0/1400/900`;
   const card1Url = imgs[1] || `https://picsum.photos/seed/${encodeURIComponent(p.companyName||'co')}1/600/400`;
   const card2Url = imgs[2] || `https://picsum.photos/seed/${encodeURIComponent(p.companyName||'co')}2/600/400`;
   const card3Url = imgs[3] || `https://picsum.photos/seed/${encodeURIComponent(p.companyName||'co')}3/600/400`;
@@ -399,9 +428,9 @@ function BrandedMockup({ p }) {
   const sc = p.secondaryColor || "#fff";
   const textOnPrimary = cc(pc);
   const navLinks = p.navLinks || ["Products", "Solutions", "Resources", "About"];
-  const heroImg = p.rawMeta?.ogImage || (p.imageUrls || [])[0];
-  const heroHeadline = p.rawMeta?.h1 || p.heroHeadline || `The Future of ${p.industry}.`;
-  const heroSubtext = p.rawMeta?.desc || p.heroSubtext || p.businessDescription || "";
+  const heroImg = p.rawMeta?.ogImage || (p.imageUrls || [])[0] || p.screenshotUrl;
+  const heroHeadline = p.heroHeadline || p.rawMeta?.h1 || `The Future of ${p.industry}.`;
+  const heroSubtext = p.heroSubtext || p.rawMeta?.desc || p.businessDescription || "";
 
   // Detect if this is a dark-background brand (Nike, Apple, etc.)
   const isDark = pc === "#000000" || pc === "#111111" || pc === "#111" || pc === "#000" ||
@@ -986,10 +1015,8 @@ function Screen4({ p }) {
   const [ann2, setAnn2] = useState(false);
   const [screenshotFailed, setScreenshotFailed] = useState(false);
 
-  // Try real screenshot via thum.io; falls back to BrandedMockup (uses p.imageUrls)
-  const screenshotUrl = p.url
-    ? `https://image.thum.io/get/width/1280/crop/800/noanimate/${encodeURIComponent(p.url)}`
-    : null;
+  // Use the exact same screenshot URL that was fed into Claude Vision during analysis
+  const screenshotUrl = p.screenshotUrl || null;
 
   useEffect(() => {
     const t1 = setTimeout(() => setScanDone(true), 1200);
