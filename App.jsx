@@ -280,9 +280,11 @@ async function genCampaignHTML(p) {
   const endpoint = import.meta.env.VITE_API_ENDPOINT;
 
   const siteImages = (p.imageUrls || []).slice(0, 6);
-  const imageBlock = siteImages.length
-    ? `\nReal images from their site (use as hero/product backgrounds):\n${siteImages.map((u,i) => `img${i+1}: ${u}`).join("\n")}`
-    : "";
+  const fallbackImgs = buildKeywordImages(p);
+  const allImages = siteImages.length >= 4
+    ? siteImages
+    : [...siteImages, ...fallbackImgs].slice(0, 6);
+  const imageBlock = `\nImages to use — embed these directly as <img src="..."> or background-image: url(...) — do NOT leave any image placeholders:\n${allImages.map((u,i) => `img${i+1}: ${u}`).join("\n")}`;
 
   // Detect dark brand
   const isDarkBrand = (() => {
@@ -293,7 +295,7 @@ async function genCampaignHTML(p) {
     } catch { return false; }
   })();
 
-  const sysPrompt = "You create stunning, brand-faithful campaign landing pages as single self-contained HTML files. Return ONLY the HTML starting with <!DOCTYPE html>. No markdown, no backticks, no explanation.";
+  const sysPrompt = "You create stunning, brand-faithful campaign landing pages as single self-contained HTML files. You MUST use all provided image URLs in the page — embed them directly as <img src> or CSS background-image. Never use placeholder images or leave image slots empty. Return ONLY the HTML starting with <!DOCTYPE html>. No markdown, no backticks, no explanation.";
 
   const userPrompt = `Create a campaign/event landing page for ${p.companyName}'s "${p.campaignName}" campaign that looks EXACTLY like it was made by ${p.companyName}'s own design team.
 
@@ -330,7 +332,7 @@ ${isDarkBrand ? `
 
 PAGE STRUCTURE:
 1. Sticky nav — ${p.companyName} logo left, nav links, CTA button right
-2. Hero — full-bleed (100vh), ${siteImages[0] ? `use img1 as background` : "brand color gradient"}, campaign headline in huge bold text, subtext, 1-2 CTAs
+2. Hero — full-bleed (100vh), use img1 as background-image with a dark overlay, campaign headline in huge bold text, subtext, 1-2 CTAs
 3. Campaign highlights — 3 cards showing the campaign's key offers/products using real product names
 4. ${isDarkBrand ? "Full-bleed product showcase section with large imagery" : "Stats/social proof section"}  
 5. Email capture / register for event section
@@ -465,12 +467,10 @@ function BrandedMockup({ p }) {
 }
 
 function buildKeywordImages(p) {
-  const ind = p.industry || "default";
-  // Use picsum.photos — works in sandboxed artifact environments unlike Unsplash
-  const indHash = (ind || "default").split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-  return Array.from({ length: 8 }, (_, i) =>
-    `https://picsum.photos/seed/${indHash + i * 17}/600/420`
-  );
+  const ind = (p.industry || "default").toLowerCase();
+  const key = Object.keys(IMAGE_DICT).find(k => ind.includes(k.split(" ")[0])) || "default";
+  const ids = IMAGE_DICT[key] || IMAGE_DICT["default"];
+  return ids.map(id => `https://images.unsplash.com/photo-${id}?w=600&h=420&fit=crop&auto=format`);
 }
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -1182,35 +1182,23 @@ function Screen7({ p }) {
 
 function SiteCard({ card, pc, sc, co, prospectThumb, faviconUrl }) {
   const [imgFailed, setImgFailed] = useState(false);
-  const showThumb = card.isProspect && prospectThumb && !imgFailed;
+  const prospectSeed = co.toLowerCase().replace(/\s/g, "");
+  const thumbSrc = card.isProspect
+    ? (prospectThumb && !imgFailed ? prospectThumb : `https://picsum.photos/seed/${prospectSeed}/400/200`)
+    : `https://picsum.photos/seed/${card.name.replace(/\s/g, "")}/400/200`;
 
   return (
     <div style={{ border: card.isProspect ? `2px solid ${pc}` : "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden", boxShadow: card.isProspect ? `0 0 0 3px ${pc}22` : "none" }}>
-      <div style={{ height: 140, position: "relative", overflow: "hidden", background: card.isProspect ? `linear-gradient(135deg,${pc},${sc})` : `linear-gradient(135deg,${card.color},${card.color2 || card.color}88)` }}>
-        {showThumb ? (
-          <img
-            src={prospectThumb}
-            alt={co}
-            onError={() => setImgFailed(true)}
-            style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top" }}
-          />
-        ) : null}
-        {/* Overlay for prospect card */}
+      <div style={{ height: 140, position: "relative", overflow: "hidden" }}>
+        <img
+          src={thumbSrc}
+          alt={card.name}
+          onError={card.isProspect ? () => setImgFailed(true) : undefined}
+          style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top", display: "block" }}
+        />
         {card.isProspect && (
-          <div style={{ position: "absolute", inset: 0, background: showThumb ? "linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.5) 100%)" : "transparent", display: "flex", flexDirection: "column", alignItems: showThumb ? "flex-start" : "center", justifyContent: showThumb ? "flex-end" : "center", padding: 10 }}>
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.45) 100%)" }}>
             <div style={{ position: "absolute", top: 8, right: 8, background: "#059669", color: "#fff", fontSize: 9, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>NEW ✓ Live</div>
-            {!showThumb && (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-                {faviconUrl && <img src={faviconUrl} alt="" width={28} height={28} style={{ borderRadius: 6, background: "#fff", padding: 2 }} onError={() => {}} />}
-                <div style={{ fontSize: 22, fontWeight: 800, color: "#fff" }}>{co[0]}</div>
-              </div>
-            )}
-          </div>
-        )}
-        {/* Non-prospect fallback */}
-        {!card.isProspect && (
-          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ width: 40, height: 40, borderRadius: 8, background: "rgba(255,255,255,.25)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: "#fff", fontWeight: 800 }}>{card.name[0]}</div>
           </div>
         )}
       </div>
@@ -1485,7 +1473,6 @@ function Screen14({ p, campHtml }) {
     try { const r=parseInt(pc.slice(1,3),16),g=parseInt(pc.slice(3,5),16),b=parseInt(pc.slice(5,7),16); return .299*r+.587*g+.114*b<60; } catch { return false; }
   })();
 
-  // Build a brand-faithful campaign page using ONLY CSS — no external images needed
   const buildCampaignPage = () => {
     const co = p.companyName || "Company";
     const ca = p.campaignName || "New Campaign";
@@ -1669,8 +1656,6 @@ ${titles.length ? `
 </html>`;
   };
 
-  const fallbackHTML = buildCampaignPage();
-
   return (
     <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
       <Sidebar active="sites" p={p} />
@@ -1690,14 +1675,21 @@ ${titles.length ? `
             ✓ {ip("{ca} Page Added", p)}
           </div>
         </div>
-        <div style={{ flex: 1, overflow: "hidden" }}>
+        <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
           {view === "campaign" ? (
-            <iframe
-              srcDoc={campHtml || fallbackHTML}
-              sandbox="allow-scripts allow-same-origin"
-              style={{ width: "100%", height: "100%", border: "none" }}
-              title="campaign page"
-            />
+            campHtml ? (
+              <iframe
+                srcDoc={campHtml}
+                sandbox="allow-scripts allow-same-origin"
+                style={{ width: "100%", height: "100%", border: "none" }}
+                title="campaign page"
+              />
+            ) : (
+              <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, background: "#f9fafb" }}>
+                <div style={{ width: 36, height: 36, border: "3px solid #e5e7eb", borderTop: "3px solid #2563EB", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+                <div style={{ fontSize: 13, color: "#6b7280", fontWeight: 500 }}>Generating {ip("{ca}", p)} campaign page…</div>
+              </div>
+            )
           ) : (
             <iframe src={p.url} style={{ width: "100%", height: "100%", border: "none" }} title="original site" />
           )}
@@ -1842,12 +1834,8 @@ const SAMPLE_COMPANIES = [
 ];
 
 function WelcomeScreen({ onStart }) {
-  const [tab, setTab] = useState("ai");
   const [url, setUrl] = useState("");
   const [urlError, setUrlError] = useState("");
-
-
-  const [mf, setMf] = useState({ companyName: "", industry: "", primaryColor: "#0076BD", secondaryColor: "#7C3AED", campaignName: "", campaignDescription: "" });
 
   const handleAI = (overrideUrl) => {
     let u = (overrideUrl || url).trim();
@@ -1856,11 +1844,6 @@ function WelcomeScreen({ onStart }) {
     try { new URL(u); } catch { setUrlError("Please enter a valid URL."); return; }
     setUrlError("");
     onStart({ type: "ai", url: u });
-  };
-
-  const handleManual = () => {
-    if (!mf.companyName || !mf.campaignName) return;
-    onStart({ type: "manual", data: mf });
   };
 
   return (
@@ -1873,67 +1856,29 @@ function WelcomeScreen({ onStart }) {
             <div style={{ color: "rgba(255,255,255,.75)", fontSize: 12, marginTop: 2 }}>Personalized to your prospect's brand in seconds</div>
           </div>
         </div>
-        <div style={{ display: "flex", borderBottom: "1px solid #e5e7eb" }}>
-          {[{ id: "ai", label: "✨ AI-Powered" }, { id: "manual", label: "⚙️ Manual Setup" }].map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, padding: "13px 0", border: "none", background: "none", fontSize: 13, fontWeight: tab === t.id ? 700 : 400, color: tab === t.id ? "#2563EB" : "#6b7280", borderBottom: tab === t.id ? "2px solid #2563EB" : "2px solid transparent", cursor: "pointer" }}>{t.label}</button>
-          ))}
-        </div>
         <div style={{ padding: "24px 26px" }}>
-          {tab === "ai" ? (
-            <>
-              <p style={{ fontSize: 13, color: "#374151", lineHeight: 1.65, marginBottom: 16 }}>
-                Enter your prospect's website URL. The AI searches the web, extracts their brand, generates a realistic persona at their company, and personalizes every screen.
-              </p>
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: .5, marginBottom: 8 }}>Quick start — click a sample company</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {SAMPLE_COMPANIES.map(sc => (
-                    <button key={sc.label} onClick={() => { setUrl(sc.url); setTimeout(() => handleAI(sc.url), 50); }} style={{ background: `${sc.color}10`, border: `1px solid ${sc.color}30`, borderRadius: 20, padding: "4px 12px", fontSize: 12, fontWeight: 600, color: sc.color || "#374151", cursor: "pointer" }}>
-                      {sc.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Prospect's Website URL</label>
-              <input
-                value={url} onChange={e => { setUrl(e.target.value); setUrlError(""); }}
-                onKeyDown={e => e.key === "Enter" && handleAI()}
-                placeholder="https://prospect.com"
-                style={{ width: "100%", border: `1px solid ${urlError ? "#EF4444" : "#e5e7eb"}`, borderRadius: 8, padding: "11px 14px", fontSize: 13, outline: "none", marginBottom: urlError ? 4 : 14 }}
-              />
-              {urlError && <div style={{ color: "#EF4444", fontSize: 11, marginBottom: 10 }}>{urlError}</div>}
-              <button onClick={() => handleAI()} style={{ width: "100%", background: "linear-gradient(135deg,#0076BD,#2563EB)", color: "#fff", border: "none", borderRadius: 8, padding: "13px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Analyze & Start Demo →</button>
-            </>
-          ) : (
-            <>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-                {[{ k: "companyName", l: "Company Name *", ph: "Acquia Inc" }, { k: "industry", l: "Industry", ph: "SaaS / Web CMS" }].map(f => (
-                  <div key={f.k}>
-                    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 4 }}>{f.l}</label>
-                    <input value={mf[f.k]} onChange={e => setMf(m => ({ ...m, [f.k]: e.target.value }))} placeholder={f.ph} style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 8, padding: "8px 12px", fontSize: 13 }} />
-                  </div>
-                ))}
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-                {[{ k: "primaryColor", l: "Primary Color" }, { k: "secondaryColor", l: "Secondary Color" }].map(f => (
-                  <div key={f.k}>
-                    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 4 }}>{f.l}</label>
-                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                      <input type="color" value={mf[f.k]} onChange={e => setMf(m => ({ ...m, [f.k]: e.target.value }))} style={{ width: 36, height: 34, border: "1px solid #e5e7eb", borderRadius: 6, cursor: "pointer" }} />
-                      <input value={mf[f.k]} onChange={e => setMf(m => ({ ...m, [f.k]: e.target.value }))} style={{ flex: 1, border: "1px solid #e5e7eb", borderRadius: 8, padding: "8px 10px", fontSize: 12, fontFamily: "monospace" }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {[{ k: "campaignName", l: "Campaign Name *", ph: "Summer Launch 2026" }, { k: "campaignDescription", l: "Campaign Description", ph: "Introducing our next-gen product line." }].map(f => (
-                <div key={f.k} style={{ marginBottom: 12 }}>
-                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 4 }}>{f.l}</label>
-                  <input value={mf[f.k]} onChange={e => setMf(m => ({ ...m, [f.k]: e.target.value }))} placeholder={f.ph} style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 8, padding: "8px 12px", fontSize: 13 }} />
-                </div>
+          <p style={{ fontSize: 13, color: "#374151", lineHeight: 1.65, marginBottom: 16 }}>
+            Enter your prospect's website URL. The AI extracts their brand, generates a realistic persona, and personalizes every screen.
+          </p>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: .5, marginBottom: 8 }}>Quick start — click a sample company</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {SAMPLE_COMPANIES.map(sc => (
+                <button key={sc.label} onClick={() => { setUrl(sc.url); setTimeout(() => handleAI(sc.url), 50); }} style={{ background: `${sc.color}10`, border: `1px solid ${sc.color}30`, borderRadius: 20, padding: "4px 12px", fontSize: 12, fontWeight: 600, color: sc.color || "#374151", cursor: "pointer" }}>
+                  {sc.label}
+                </button>
               ))}
-              <button onClick={handleManual} style={{ width: "100%", background: "#111827", color: "#fff", border: "none", borderRadius: 8, padding: "12px 0", fontSize: 14, fontWeight: 700, cursor: "pointer", marginTop: 4 }}>Start Demo →</button>
-            </>
-          )}
+            </div>
+          </div>
+          <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Prospect's Website URL</label>
+          <input
+            value={url} onChange={e => { setUrl(e.target.value); setUrlError(""); }}
+            onKeyDown={e => e.key === "Enter" && handleAI()}
+            placeholder="https://prospect.com"
+            style={{ width: "100%", border: `1px solid ${urlError ? "#EF4444" : "#e5e7eb"}`, borderRadius: 8, padding: "11px 14px", fontSize: 13, outline: "none", marginBottom: urlError ? 4 : 14 }}
+          />
+          {urlError && <div style={{ color: "#EF4444", fontSize: 11, marginBottom: 10 }}>{urlError}</div>}
+          <button onClick={() => handleAI()} style={{ width: "100%", background: "linear-gradient(135deg,#0076BD,#2563EB)", color: "#fff", border: "none", borderRadius: 8, padding: "13px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Analyze & Start Demo →</button>
         </div>
         <div style={{ textAlign: "center", fontSize: 11, color: "#9ca3af", padding: "0 26px 18px" }}>Prospect data is not stored or shared</div>
       </div>
@@ -2099,16 +2044,7 @@ export default function App() {
   const [analyzingUrl, setAnalyzingUrl] = useState("");
   const [selectedScreens, setSelectedScreens] = useState(null); // null = all screens
 
-  const handleStart = async ({ type, url, data }) => {
-    if (type === "manual") {
-      const p = { ...fallbackProspect("https://example.com"), ...data };
-      setProspect(p); setPhase("launchpad");
-      setDamImages(buildKeywordImages(p));
-      setTimeout(() => {
-        genCampaignHTML(p).then(html => html && setCampHtml(html)).catch(() => { });
-      }, 3000);
-      return;
-    }
+  const handleStart = async ({ url }) => {
     setAnalyzingUrl(url); setPhase("analyzing");
     let p;
     try {
