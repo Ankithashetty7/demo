@@ -115,7 +115,7 @@ const detectIndustry = url => {
     assetKeywords: ["luxury resort beach", "hotel lobby experience", "travel destination scenery", "business travel lounge"],
     contentClusterTitles: ["The 10 Most Breathtaking Summer Destinations for 2026", "Insider Travel Hacks to Maximize Your Summer Getaway", "How Our Loyalty Program Makes Every Journey More Rewarding", "Summer Travel Trends: What's Drawing Travelers in 2026"]
   };
-  if (/(food|cafe|coffee|restaurant|dine|burger|drink|beverage)/.test(d)) return {
+  if (/(food|cafe|coffee|restaurant|dine|burger|drink|beverage|starbucks|mcdonald|subway|chipotle|domino|pizz|sushi|bakery|brew|roast|espresso|latte|boba|juice|grocery|snack)/.test(d)) return {
     industry: "food & beverage", products: ["Mobile Order & Pay", "Customer Rewards", "Digital Menu Hub"],
     campaignName: "Seasonal Flavor Launch", campaignDescription: "An exclusive early-access event for our newest seasonal beverages and treats.",
     urgentCampaignTrigger: "A viral social media trend created sudden demand for our seasonal items",
@@ -515,15 +515,17 @@ function BrandedMockup({ p }) {
 
 function buildKeywordImages(p) {
   const ind = (p.industry || "default").toLowerCase();
+  // food & beverage MUST come before retail — "Global Coffee Retail" contains "retail"
+  // but the dominant industry signal is "coffee", so check food-specific terms first
   const ALIASES = {
-    "healthcare & wellness": ["health", "medical", "pharma", "clinic", "wellness", "hospital"],
-    "financial services": ["financ", "bank", "invest", "insurance", "fintech", "wealth"],
-    "retail & commerce": ["retail", "shop", "commerce", "ecommerce", "e-commerce", "fashion", "apparel", "store", "brand", "product"],
-    "automotive": ["auto", "car", "vehicle", "motor", "drive", "fleet", "electric"],
-    "education": ["edu", "university", "college", "school", "learn", "academ"],
-    "travel & hospitality": ["travel", "hotel", "hospit", "resort", "airline", "tourism"],
-    "food & beverage": ["food", "cafe", "coffee", "restaurant", "beverage", "drink", "starbucks", "barista"],
-    "enterprise technology": ["tech", "software", "platform", "saas", "digital", "enterprise", "cloud", "ai", "data"],
+    "food & beverage":       ["food","cafe","coffee","restaurant","beverage","drink","starbucks","barista","brew","roast","espresso","latte","dine","dining","grocery","snack","bakery","boba","juice","tea"],
+    "healthcare & wellness": ["health","medical","pharma","clinic","wellness","hospital"],
+    "financial services":    ["financ","bank","invest","insurance","fintech","wealth"],
+    "automotive":            ["auto","car","vehicle","motor","drive","fleet","electric"],
+    "education":             ["edu","university","college","school","learn","academ"],
+    "travel & hospitality":  ["travel","hotel","hospit","resort","airline","tourism"],
+    "retail & commerce":     ["retail","shop","commerce","ecommerce","e-commerce","fashion","apparel","store","brand","product"],
+    "enterprise technology": ["tech","software","platform","saas","digital","enterprise","cloud","ai","data"],
   };
   const key = Object.keys(ALIASES).find(k => ALIASES[k].some(a => ind.includes(a))) || "default";
   const ids = IMAGE_DICT[key] || IMAGE_DICT["default"];
@@ -1330,16 +1332,38 @@ function MockSiteThumb({ name }) {
 }
 
 function SiteCard({ card, pc, sc, co, p, faviconUrl }) {
-  const [thumbFailed, setThumbFailed] = useState(false);
-  const thumSrc = `https://image.thum.io/get/width/400/crop/200/noanimate/${card.siteUrl || "https://" + card.domain}`;
+  const [mlUrl, setMlUrl] = useState(null);
+  const [mlFailed, setMlFailed] = useState(false);
+  const [mlLoading, setMlLoading] = useState(!card.isProspect);
+
+  useEffect(() => {
+    if (card.isProspect) return;
+    const target = card.siteUrl || `https://${card.domain}`;
+    fetch(`https://api.microlink.io?url=${encodeURIComponent(target)}&screenshot=true`, {
+      signal: AbortSignal.timeout(15000)
+    })
+      .then(r => r.json())
+      .then(d => {
+        const url = d?.data?.screenshot?.url;
+        if (url) setMlUrl(url);
+        else setMlFailed(true);
+      })
+      .catch(() => setMlFailed(true))
+      .finally(() => setMlLoading(false));
+  }, [card.domain]);
 
   const renderThumb = () => {
     if (card.isProspect) return <ProspectSiteThumb p={p} />;
-    if (!thumbFailed) return (
+    if (mlLoading) return (
+      <div style={{ width: "100%", height: "100%", background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ width: 22, height: 22, border: "2px solid #e2e8f0", borderTopColor: "#6366f1", borderRadius: "50%", animation: "spin 0.75s linear infinite" }} />
+      </div>
+    );
+    if (mlUrl && !mlFailed) return (
       <img
-        src={thumSrc}
+        src={mlUrl}
         alt={card.name}
-        onError={() => setThumbFailed(true)}
+        onError={() => setMlFailed(true)}
         style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top", display: "block" }}
       />
     );
@@ -1516,13 +1540,13 @@ function Screen12({ p, damImages }) {
   // Match filenames to actual IMAGE_DICT content for this industry
   const ind = (p.industry || "default").toLowerCase();
   const ALIASES = {
-    "food & beverage": ["food","cafe","coffee","restaurant","beverage","drink","starbucks","barista"],
-    "retail & commerce": ["retail","shop","commerce","ecommerce","e-commerce","fashion","apparel","store","brand","product"],
+    "food & beverage":       ["food","cafe","coffee","restaurant","beverage","drink","starbucks","barista","brew","roast","espresso","latte","dine","dining","grocery","snack","bakery","boba","juice","tea"],
     "healthcare & wellness": ["health","medical","pharma","clinic","wellness","hospital"],
-    "financial services": ["financ","bank","invest","insurance","fintech","wealth"],
-    "automotive": ["auto","car","vehicle","motor","drive","fleet","electric"],
-    "education": ["edu","university","college","school","learn","academ"],
-    "travel & hospitality": ["travel","hotel","hospit","resort","airline","tourism"],
+    "financial services":    ["financ","bank","invest","insurance","fintech","wealth"],
+    "automotive":            ["auto","car","vehicle","motor","drive","fleet","electric"],
+    "education":             ["edu","university","college","school","learn","academ"],
+    "travel & hospitality":  ["travel","hotel","hospit","resort","airline","tourism"],
+    "retail & commerce":     ["retail","shop","commerce","ecommerce","e-commerce","fashion","apparel","store","brand","product"],
     "enterprise technology": ["tech","software","platform","saas","digital","enterprise","cloud","ai","data"],
   };
   const industryKey = Object.keys(ALIASES).find(k => ALIASES[k].some(a => ind.includes(a))) || "default";
