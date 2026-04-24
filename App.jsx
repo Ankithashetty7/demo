@@ -340,6 +340,9 @@ async function genCampaignHTML(p) {
   const ca = p.campaignName || "Campaign";
   const navLinks = (p.navLinks || ["Home","Products","About","Contact"]).join(", ");
 
+  const clusterTitles = (p.contentClusterTitles || []).slice(0, 4);
+  const readTimes = ["4 min read", "6 min read", "5 min read", "7 min read"];
+
   const sysPrompt = "You are an expert web designer. Create a complete, self-contained campaign landing page HTML file. Return ONLY valid HTML starting with <!DOCTYPE html>. No markdown fences, no explanation.";
 
   const userPrompt = `Build a high-fidelity campaign landing page for ${co}'s "${ca}" campaign.
@@ -361,13 +364,17 @@ IMAGE URLS — copy these strings EXACTLY into your HTML (do not shorten or rena
 
 NAV LINKS: ${navLinks}
 
+CONTENT CLUSTER ARTICLES (from Writing Assistant — use these exact titles):
+${clusterTitles.map((t, i) => `Article ${i + 1}: "${t}" — ${readTimes[i]}`).join("\n")}
+
 REQUIRED SECTIONS (in order):
 1. <nav> sticky, ${isDarkBrand ? "background:#111" : `background:${pc}`}, ${co} logo (bold, white), nav links, CTA button
 2. <section id="hero"> height:100vh, background-image:url("${heroUrl}") center/cover no-repeat, overlay rgba(0,0,0,${isDarkBrand ? "0.55" : "0.4"}), centered white text: huge headline (${isDarkBrand ? "font-weight:900;text-transform:uppercase;font-size:clamp(48px,8vw,96px)" : "font-weight:800;font-size:clamp(40px,6vw,72px)"}), subtext, two CTA buttons
 3. <section id="products"> ${isDarkBrand ? "background:#000" : "background:#f9fafb"}, 3 cards side by side, each card has <img src="CARD_URL" style="width:100%;height:220px;object-fit:cover"> at top, product name, description below
 4. <section id="showcase"> full-width, background-image:url("${bgUrl}") center/cover, dark overlay, bold centered text, stat numbers
-5. <section id="register"> ${isDarkBrand ? "background:#111" : `background:${pc}`}, email input + submit button, centered layout
-6. <footer> dark background, ${co} name, nav links, copyright
+5. <section id="insights"> ${isDarkBrand ? "background:#111;color:#fff" : "background:#f9fafb"}, heading "From the Content Studio" (left-aligned, bold), 4-column article card grid. Each card: top accent bar (4px, ${pc}), article title from the content cluster above (font-weight:600, font-size:15px), read-time badge (small pill, ${isDarkBrand ? "background:#222;color:#aaa" : "background:#e5e7eb;color:#6b7280"}), "Read Article" text-link (href="#", color:${pc}, font-weight:600, no underline by default, underline on hover). Cards: ${isDarkBrand ? "background:#1a1a1a;border:1px solid #333" : "background:#fff;border:1px solid #e5e7eb"}, border-radius:10px, padding:20px. No images in this section.
+6. <section id="register"> ${isDarkBrand ? "background:#111" : `background:${pc}`}, email input + submit button, centered layout
+7. <footer> dark background, ${co} name, nav links, copyright
 
 CSS RULES:
 ${isDarkBrand ? `- All section backgrounds: #000 or #111 (never white or light)
@@ -2306,7 +2313,9 @@ export default function App() {
     }
     setProspect(p);
     const siteImages = p.imageUrls || [];
-    setDamImages(siteImages.length >= 4 ? siteImages : buildKeywordImages(p));
+    const kwImages = buildKeywordImages(p);
+    // Always put company-specific scraped images first so Nestle never shows Starbucks images
+    setDamImages([...siteImages, ...kwImages].slice(0, 8));
     // Start campaign HTML generation immediately — no delay — so it's ready well before Screen 14
     genCampaignHTML(p).then(html => html && setCampHtml(html)).catch(() => { });
     setPhase("launchpad");
