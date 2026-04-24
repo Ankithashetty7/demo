@@ -1231,7 +1231,6 @@ function Screen7({ p }) {
   const sc = p.secondaryColor || "#7C3AED";
   const co = p.companyName || "Company";
 
-  const prospectScreenshot = p.screenshotUrl || (p.imageUrls || [])[0] || null;
   const faviconUrl = p.url ? `https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(p.url)}` : null;
 
   // thum.io works as <img src> with no CORS — gives real site front-page screenshots
@@ -1262,7 +1261,7 @@ function Screen7({ p }) {
         <input placeholder="Search by site label or domain" style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", width: 260, fontSize: 12, marginBottom: 20 }} />
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
           {siteCards.map((card, i) => (
-            <SiteCard key={i} card={card} pc={pc} sc={sc} co={co} prospectScreenshot={prospectScreenshot} faviconUrl={faviconUrl} />
+            <SiteCard key={i} card={card} pc={pc} sc={sc} co={co} p={p} faviconUrl={faviconUrl} />
           ))}
         </div>
       </div>
@@ -1270,28 +1269,90 @@ function Screen7({ p }) {
   );
 }
 
-function SiteCard({ card, pc, sc, co, prospectScreenshot, faviconUrl }) {
-  const [imgFailed, setImgFailed] = useState(false);
+// Scales the BrandedMockup (1280×800) into the 140px-tall card thumbnail
+function ProspectSiteThumb({ p }) {
+  const scale = 0.225; // 1280 × 0.225 ≈ 288px wide — fills a 4-col grid card
+  return (
+    <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative", background: p.primaryColor || "#111" }}>
+      <div style={{ position: "absolute", top: 0, left: 0, width: 1280, height: 800, transform: `scale(${scale})`, transformOrigin: "top left", pointerEvents: "none" }}>
+        <BrandedMockup p={p} />
+      </div>
+    </div>
+  );
+}
 
-  // Prospect card: use Microlink/thum.io screenshot captured during analysis
-  // Static cards: use thum.io — works as <img src>, no CORS, real front-page screenshot
-  const thumUrl = domain => `https://image.thum.io/get/width/400/crop/200/noanimate/https://${domain}`;
-  const thumbSrc = card.isProspect
-    ? (prospectScreenshot && !imgFailed ? prospectScreenshot : thumUrl(card.domain))
-    : (imgFailed ? `https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400&h=200&fit=crop` : thumUrl(card.domain));
+// Creative mini-website wireframe rendered in JSX — used as fallback for static cards
+function MockSiteThumb({ name }) {
+  const hash = name.split("").reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 0);
+  const hue = Math.abs(hash) % 360;
+  const pc = `hsl(${hue}, 52%, 36%)`;
+  const pc2 = `hsl(${(hue + 28) % 360}, 58%, 50%)`;
+  return (
+    <div style={{ width: "100%", height: "100%", background: "#f1f5f9", overflow: "hidden", fontFamily: "system-ui, sans-serif" }}>
+      {/* Browser chrome */}
+      <div style={{ height: 16, background: "#e2e8f0", borderBottom: "1px solid #cbd5e1", display: "flex", alignItems: "center", padding: "0 6px", gap: 4 }}>
+        {["#f87171","#fbbf24","#4ade80"].map((c,i) => <div key={i} style={{ width: 5, height: 5, borderRadius: "50%", background: c }} />)}
+        <div style={{ flex: 1, height: 7, background: "#fff", borderRadius: 10, margin: "0 6px", border: "1px solid #e2e8f0" }} />
+      </div>
+      {/* Nav */}
+      <div style={{ height: 18, background: pc, display: "flex", alignItems: "center", padding: "0 8px", gap: 6 }}>
+        <div style={{ width: 38, height: 6, background: "rgba(255,255,255,0.92)", borderRadius: 2 }} />
+        <div style={{ flex: 1 }} />
+        {[24,20,28,20].map((w,i) => <div key={i} style={{ width: w, height: 4, background: "rgba(255,255,255,0.4)", borderRadius: 2 }} />)}
+        <div style={{ width: 32, height: 13, background: "rgba(255,255,255,0.2)", borderRadius: 2, border: "1px solid rgba(255,255,255,0.4)" }} />
+      </div>
+      {/* Hero gradient */}
+      <div style={{ height: 50, background: `linear-gradient(135deg, ${pc} 0%, ${pc2} 100%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4 }}>
+        <div style={{ width: 72, height: 6, background: "rgba(255,255,255,0.95)", borderRadius: 3 }} />
+        <div style={{ width: 52, height: 4, background: "rgba(255,255,255,0.5)", borderRadius: 2 }} />
+        <div style={{ display: "flex", gap: 5, marginTop: 2 }}>
+          <div style={{ width: 34, height: 12, background: "rgba(255,255,255,0.9)", borderRadius: 2 }} />
+          <div style={{ width: 34, height: 12, background: "rgba(255,255,255,0.2)", borderRadius: 2, border: "1px solid rgba(255,255,255,0.5)" }} />
+        </div>
+      </div>
+      {/* Content cards row */}
+      <div style={{ display: "flex", gap: 5, padding: "6px 6px 0" }}>
+        {[0,1,2].map(i => (
+          <div key={i} style={{ flex: 1, background: "#fff", borderRadius: 3, overflow: "hidden", border: "1px solid #e2e8f0" }}>
+            <div style={{ height: 22, background: `linear-gradient(${i % 2 ? pc2 : pc}, rgba(255,255,255,0))`, opacity: 0.3 }} />
+            <div style={{ padding: "3px 4px" }}>
+              <div style={{ width: "70%", height: 3, background: "#94a3b8", borderRadius: 2, marginBottom: 2 }} />
+              <div style={{ width: "90%", height: 2.5, background: "#e2e8f0", borderRadius: 2, marginBottom: 1.5 }} />
+              <div style={{ width: "55%", height: 2.5, background: "#e2e8f0", borderRadius: 2 }} />
+            </div>
+          </div>
+        ))}
+      </div>
+      {/* Footer strip */}
+      <div style={{ height: 12, background: pc, marginTop: 6, opacity: 0.8 }} />
+    </div>
+  );
+}
+
+function SiteCard({ card, pc, sc, co, p, faviconUrl }) {
+  const [thumbFailed, setThumbFailed] = useState(false);
+  const thumSrc = `https://image.thum.io/get/width/400/crop/200/noanimate/https://${card.domain}`;
+
+  const renderThumb = () => {
+    if (card.isProspect) return <ProspectSiteThumb p={p} />;
+    if (!thumbFailed) return (
+      <img
+        src={thumSrc}
+        alt={card.name}
+        onError={() => setThumbFailed(true)}
+        style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top", display: "block" }}
+      />
+    );
+    return <MockSiteThumb name={card.name} />;
+  };
 
   return (
     <div style={{ border: card.isProspect ? `2px solid ${pc}` : "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden", boxShadow: card.isProspect ? `0 0 0 3px ${pc}22` : "none" }}>
       <div style={{ height: 140, position: "relative", overflow: "hidden" }}>
-        <img
-          src={thumbSrc}
-          alt={card.name}
-          onError={() => setImgFailed(true)}
-          style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top", display: "block" }}
-        />
+        {renderThumb()}
         {card.isProspect && (
           <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.45) 100%)" }}>
-            <div style={{ position: "absolute", top: 8, right: 8, background: "#059669", color: "#fff", fontSize: 9, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>NEW ✓ Live</div>
+            <div style={{ position: "absolute", top: 8, right: 8, background: "#059669", color: "#fff", fontSize: 9, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>NEW - Live</div>
           </div>
         )}
       </div>
@@ -1300,7 +1361,7 @@ function SiteCard({ card, pc, sc, co, prospectScreenshot, faviconUrl }) {
         <div style={{ fontSize: 11, color: "#2563EB", marginBottom: 6 }}>{card.domain} ↗</div>
         <span style={{ background: "#ECFDF5", color: "#059669", fontSize: 10, fontWeight: 600, borderRadius: 4, padding: "2px 8px" }}>Public</span>
         <div style={{ marginTop: 8 }}>
-          <button style={{ border: "1px solid #e5e7eb", background: "#fff", borderRadius: 6, padding: "5px 10px", fontSize: 11, cursor: "pointer" }}>✎ Edit Site</button>
+          <button style={{ border: "1px solid #e5e7eb", background: "#fff", borderRadius: 6, padding: "5px 10px", fontSize: 11, cursor: "pointer" }}>Edit Site</button>
         </div>
       </div>
     </div>
