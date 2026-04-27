@@ -378,7 +378,20 @@ async function analyzeProspect(url) {
     })
       .then(r => r.json())
       .then(d => ({
-        screenshot: d?.data?.screenshot?.url || null,
+        // Discard screenshot if:
+        // 1. Microlink itself failed (status !== "success")
+        // 2. Target page returned HTTP error (403, 429, 5xx)
+        // 3. Page title contains block/error keywords (Akamai returns 200 but error HTML)
+        screenshot: (() => {
+          const url = d?.data?.screenshot?.url;
+          if (!url) return null;
+          if (d?.status !== "success") return null;
+          const sc = d?.data?.statusCode;
+          if (sc && sc >= 400) return null;
+          const title = (d?.data?.title || "").toLowerCase();
+          if (/(access denied|forbidden|blocked|error|captcha|unavailable|not found|just a moment)/.test(title)) return null;
+          return url;
+        })(),
         mainImage: d?.data?.image?.url || null,
         images: (d?.data?.images || [])
           .filter(img =>
